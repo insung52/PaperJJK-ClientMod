@@ -1,0 +1,11 @@
+{
+  "category.paperjjk.keybinds": "PaperJJK",
+  "key.paperjjk.domain_expansion": "영역전개 (R)",
+  "key.paperjjk.barrier": "결계술 / 간이영역 (G)",
+  "key.paperjjk.rct": "반전술식 (Z)",
+  "key.paperjjk.slot1": "술식 슬롯 1 (X)",
+  "key.paperjjk.slot2": "술식 슬롯 2 (C)",
+  "key.paperjjk.slot3": "술식 슬롯 3 (V)",
+  "key.paperjjk.slot4": "술식 슬롯 4 (B)",
+  "key.paperjjk.technique_control": "술식 조작 (T)"
+}

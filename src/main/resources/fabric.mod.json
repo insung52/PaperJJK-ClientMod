@@ -1,0 +1,38 @@
+{
+	"schemaVersion": 1,
+	"id": "paperjjk-client",
+	"version": "${version}",
+	"name": "PaperJJK Client",
+	"description": "Client-side mod for PaperJJK plugin with custom HUD, keybinds, and visual effects for Jujutsu Kaisen techniques",
+	"authors": [
+		"justheare"
+	],
+	"contact": {
+		"homepage": "https://github.com/yourusername/paperjjk-client",
+		"sources": "https://github.com/yourusername/paperjjk-client"
+	},
+	"license": "MIT",
+	"icon": "assets/paperjjk-client/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.justheare.paperjjk_client.PaperJJKClientClient"
+		]
+	},
+	"mixins": [
+		"paperjjk-client.mixins.json",
+		{
+			"config": "paperjjk-client.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.17.3",
+		"minecraft": "~1.21.10",
+		"java": ">=21",
+		"fabric-api": "*"
+	},
+	"suggests": {
+		"another-mod": "*"
+	}
+}
