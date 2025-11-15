@@ -107,10 +107,11 @@ public class ClientPacketHandler {
                     domain.center = new net.minecraft.util.math.Vec3d(centerX, centerY, centerZ);
                     domain.currentRadius = 0.0f;
                     domain.maxRadius = maxRadius;
-                    domain.expansionSpeed = expansionSpeed;
+                    domain.expansionSpeed = expansionSpeed;  // Initial speed from server
                     domain.color = colorRGB;
                     domain.domainType = domainType;
-                    domain.startTime = System.currentTimeMillis();
+                    domain.lastSyncTime = System.currentTimeMillis();
+                    domain.serverRadius = 0.0f;  // Server starts at 0
                     domain.isExpanding = true;
 
                     ClientGameData.addDomain(domainId, domain);

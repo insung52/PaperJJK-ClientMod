@@ -74,9 +74,9 @@ public class PaperJJKClientClient implements ClientModInitializer {
 		LOGGER.info("[5/5] 이벤트 리스너 등록 중...");
 		registerEventListeners();
 
-		// 6. 도메인 렌더러 초기화 (disabled for now)
-		// LOGGER.info("[6/6] 도메인 셰이더 초기화 중...");
-		// DomainRenderer.init();
+		// 6. Post-processing (향후 구현 예정)
+		// LOGGER.info("[6/6] Post-processing 셰이더 초기화 중...");
+		// JJKPostProcessor.getInstance().init();
 
 		LOGGER.info("========================================");
 		LOGGER.info("  PaperJJK Client Mod 초기화 완료!");
@@ -98,6 +98,7 @@ public class PaperJJKClientClient implements ClientModInitializer {
 			LOGGER.info("서버 연결 해제: 데이터 정리");
 			ClientGameData.reset();
 			JJKKeyBinds.reset();
+			// JJKPostProcessor.getInstance().cleanup();
 			// DomainRenderer.dispose();
 		});
 
@@ -112,6 +113,9 @@ public class PaperJJKClientClient implements ClientModInitializer {
 			// float tickDelta = context.tickCounter().getTickDelta(true);
 			// DomainRenderer.render(context.matrices(), tickDelta, camera);
 		});
+
+		// TODO: Post-processing will be added when we find the correct render event
+		// For now, effects are toggle-able but rendering is disabled
 
 		// 클라이언트 틱 이벤트: 도메인 반지름 업데이트
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {

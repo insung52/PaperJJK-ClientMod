@@ -183,40 +183,70 @@ public class ClientGameData {
         public Vec3d center;
         public float currentRadius;
         public float maxRadius;
-        public float expansionSpeed;  // blocks per second
+        public float expansionSpeed;  // blocks per tick (recalculated on sync)
         public int color;
         public int domainType;
-        public long startTime;
+        public long lastSyncTime;  // When we last received server update
+        public float serverRadius;  // Last known server radius
         public boolean isExpanding;
 
         /**
-         * Update current radius based on elapsed time
+         * Update current radius - smoothly chase server radius
+         * Never exceeds server radius, gradually catches up
          */
         public void updateRadius() {
             if (!isExpanding || currentRadius >= maxRadius) {
-                currentRadius = maxRadius;
-                isExpanding = false;
+                currentRadius = Math.min(maxRadius, serverRadius);
+                if (currentRadius >= maxRadius) {
+                    isExpanding = false;
+                }
                 return;
             }
 
-            long elapsed = System.currentTimeMillis() - startTime;
-            float targetRadius = Math.min(maxRadius, expansionSpeed * (elapsed / 1000.0f));
-
-            // Smooth interpolation
-            currentRadius = targetRadius;
+            // Calculate how much we can grow this tick
+            // We chase the server radius but never exceed it
+            if (currentRadius < serverRadius) {
+                // Grow towards server radius at calculated speed
+                currentRadius = Math.min(serverRadius, currentRadius + expansionSpeed);
+            }
+            // If currentRadius >= serverRadius, don't grow (wait for next server update)
         }
 
         /**
-         * Sync with server radius (called every 3 seconds)
-         * Corrects client-side drift
+         * Sync with server radius (called frequently by server)
+         * Recalculates expansion speed to smoothly reach new server radius
          */
-        public void syncFromServer(float serverRadius) {
-            // If drift is more than 5 blocks, correct it
-            if (Math.abs(currentRadius - serverRadius) > 5.0f) {
+        public void syncFromServer(float newServerRadius) {
+            long currentTime = System.currentTimeMillis();
+            long timeSinceLastSync = currentTime - lastSyncTime;
+
+            if (timeSinceLastSync > 0 && newServerRadius > serverRadius) {
+                // Server radius increased - calculate new expansion speed
+                // Speed = how much server grew / time elapsed
+                float serverGrowth = newServerRadius - serverRadius;
+                float timeInTicks = timeSinceLastSync / 50.0f;  // ms to ticks (50ms per tick)
+
+                if (timeInTicks > 0) {
+                    // Calculate speed to catch up smoothly
+                    float newSpeed = serverGrowth / timeInTicks;
+
+                    // Apply some smoothing to avoid jerky speed changes
+                    if (expansionSpeed > 0) {
+                        // Weighted average: 70% old speed, 30% new speed
+                        expansionSpeed = expansionSpeed * 0.7f + newSpeed * 0.3f;
+                    } else {
+                        expansionSpeed = newSpeed;
+                    }
+                }
+            }
+
+            // Update server tracking
+            serverRadius = newServerRadius;
+            lastSyncTime = currentTime;
+
+            // If client somehow got ahead (shouldn't happen), snap back
+            if (currentRadius > serverRadius) {
                 currentRadius = serverRadius;
-                // Recalculate start time based on current progress
-                startTime = System.currentTimeMillis() -
-                    (long)((serverRadius / expansionSpeed) * 1000);
             }
         }
     }
