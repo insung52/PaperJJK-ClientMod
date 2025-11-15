@@ -1,0 +1,23 @@
+{
+  "targets": [
+    "swap"
+  ],
+  "passes": [
+    {
+      "name": "paperjjk-client:domain_sphere",
+      "intarget": "minecraft:main",
+      "outtarget": "swap",
+      "auxtargets": [
+        {
+          "name": "DiffuseDepthSampler",
+          "id": "minecraft:main:depth"
+        }
+      ]
+    },
+    {
+      "name": "paperjjk-client:blit",
+      "intarget": "swap",
+      "outtarget": "minecraft:main"
+    }
+  ]
+}

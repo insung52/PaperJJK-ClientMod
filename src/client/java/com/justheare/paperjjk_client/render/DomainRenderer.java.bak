@@ -1,0 +1,228 @@
+package com.justheare.paperjjk_client.render;
+
+import com.justheare.paperjjk_client.data.ClientGameData;
+import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gl.Framebuffer;
+import net.minecraft.client.gl.SimpleFramebuffer;
+import net.minecraft.client.render.*;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.util.math.Vec3d;
+import org.joml.Matrix4f;
+import org.lwjgl.opengl.GL11;
+
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Renders barrier-less domain expansions using custom OpenGL rendering
+ *
+ * Since Minecraft 1.21.10's PostEffectProcessor API doesn't support dynamic uniforms easily,
+ * we use a simpler approach: direct OpenGL rendering with sphere geometry
+ */
+public class DomainRenderer {
+    private static boolean initialized = false;
+    private static Framebuffer domainFramebuffer;
+
+    /**
+     * Initialize the domain renderer
+     * Called during client initialization
+     */
+    public static void init() {
+        if (initialized) return;
+
+        MinecraftClient client = MinecraftClient.getInstance();
+
+        try {
+            // Create a framebuffer for domain rendering
+            domainFramebuffer = new SimpleFramebuffer(
+                client.getWindow().getFramebufferWidth(),
+                client.getWindow().getFramebufferHeight(),
+                true,
+                MinecraftClient.IS_SYSTEM_MAC
+            );
+
+            initialized = true;
+            System.out.println("[PaperJJK] Domain renderer initialized successfully");
+        } catch (Exception e) {
+            System.err.println("[PaperJJK] Failed to initialize domain renderer: " + e.getMessage());
+            e.printStackTrace();
+            initialized = false;
+        }
+    }
+
+    /**
+     * Render all active domain spheres
+     * Called from WorldRenderEvents.AFTER_TRANSLUCENT
+     */
+    public static void render(MatrixStack matrices, float tickDelta, Camera camera) {
+        if (!initialized) {
+            return;
+        }
+
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.world == null || client.player == null) {
+            return;
+        }
+
+        Map<UUID, ClientGameData.ActiveDomain> domains = ClientGameData.getActiveDomains();
+        if (domains.isEmpty()) {
+            return;
+        }
+
+        Vec3d cameraPos = camera.getPos();
+
+        // Render each domain
+        for (ClientGameData.ActiveDomain domain : domains.values()) {
+            if (domain == null || domain.currentRadius <= 0) {
+                continue;
+            }
+
+            renderDomainSphere(matrices, domain, cameraPos);
+        }
+    }
+
+    /**
+     * Render a single domain sphere using alpha-blended geometry
+     */
+    private static void renderDomainSphere(MatrixStack matrices, ClientGameData.ActiveDomain domain, Vec3d cameraPos) {
+        matrices.push();
+
+        try {
+            // Translate to domain center relative to camera
+            matrices.translate(
+                domain.center.x - cameraPos.x,
+                domain.center.y - cameraPos.y,
+                domain.center.z - cameraPos.z
+            );
+
+            // Setup rendering state
+            RenderSystem.enableBlend();
+            RenderSystem.blendFuncSeparate(
+                GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA,
+                GL11.GL_ONE, GL11.GL_ZERO
+            );
+            RenderSystem.depthMask(false);
+            RenderSystem.disableCull();
+
+            // Convert color int to RGBA (0xRRGGBB)
+            float r = ((domain.color >> 16) & 0xFF) / 255.0f;
+            float g = ((domain.color >> 8) & 0xFF) / 255.0f;
+            float b = (domain.color & 0xFF) / 255.0f;
+            float a = 0.3f; // Base transparency
+
+            // Get matrix
+            Matrix4f positionMatrix = matrices.peek().getPositionMatrix();
+
+            // Render sphere using Tessellator
+            renderSphereGeometry(positionMatrix, domain.currentRadius, r, g, b, a);
+
+            // Restore rendering state
+            RenderSystem.enableCull();
+            RenderSystem.depthMask(true);
+            RenderSystem.disableBlend();
+
+        } catch (Exception e) {
+            System.err.println("[PaperJJK] Error rendering domain sphere: " + e.getMessage());
+        } finally {
+            matrices.pop();
+        }
+    }
+
+    /**
+     * Render sphere geometry using latitude/longitude subdivision
+     * Creates a translucent sphere with Fresnel-like edge glow
+     */
+    private static void renderSphereGeometry(Matrix4f matrix, float radius, float r, float g, float b, float a) {
+        Tessellator tessellator = Tessellator.getInstance();
+        BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+
+        int latSegments = 32; // Latitude divisions
+        int lonSegments = 32; // Longitude divisions
+
+        for (int lat = 0; lat < latSegments; lat++) {
+            float theta1 = (float) (lat * Math.PI / latSegments);
+            float theta2 = (float) ((lat + 1) * Math.PI / latSegments);
+
+            for (int lon = 0; lon < lonSegments; lon++) {
+                float phi1 = (float) (lon * 2 * Math.PI / lonSegments);
+                float phi2 = (float) ((lon + 1) * 2 * Math.PI / lonSegments);
+
+                // Calculate vertices
+                Vec3d v1 = spherePoint(radius, theta1, phi1);
+                Vec3d v2 = spherePoint(radius, theta1, phi2);
+                Vec3d v3 = spherePoint(radius, theta2, phi2);
+                Vec3d v4 = spherePoint(radius, theta2, phi1);
+
+                // Calculate alpha based on angle from view (Fresnel effect)
+                float alpha1 = calculateFresnel(v1, radius) * a;
+                float alpha2 = calculateFresnel(v2, radius) * a;
+                float alpha3 = calculateFresnel(v3, radius) * a;
+                float alpha4 = calculateFresnel(v4, radius) * a;
+
+                // Add quad
+                buffer.vertex(matrix, (float)v1.x, (float)v1.y, (float)v1.z).color(r, g, b, alpha1);
+                buffer.vertex(matrix, (float)v2.x, (float)v2.y, (float)v2.z).color(r, g, b, alpha2);
+                buffer.vertex(matrix, (float)v3.x, (float)v3.y, (float)v3.z).color(r, g, b, alpha3);
+                buffer.vertex(matrix, (float)v4.x, (float)v4.y, (float)v4.z).color(r, g, b, alpha4);
+            }
+        }
+
+        // Draw the buffer using the built-in rendering system
+        BuiltBuffer builtBuffer = buffer.end();
+        BufferRenderer.drawWithGlobalProgram(builtBuffer);
+    }
+
+    /**
+     * Calculate a point on a sphere using spherical coordinates
+     */
+    private static Vec3d spherePoint(float radius, float theta, float phi) {
+        double x = radius * Math.sin(theta) * Math.cos(phi);
+        double y = radius * Math.cos(theta);
+        double z = radius * Math.sin(theta) * Math.sin(phi);
+        return new Vec3d(x, y, z);
+    }
+
+    /**
+     * Calculate Fresnel effect for edge glow
+     * Points closer to the edge of the sphere (from camera view) are more opaque
+     */
+    private static float calculateFresnel(Vec3d point, float radius) {
+        // Normalize the point to get surface normal
+        double length = Math.sqrt(point.x * point.x + point.y * point.y + point.z * point.z);
+        if (length == 0) return 1.0f;
+
+        // View vector is from point to camera (0,0,0 in local space)
+        Vec3d viewDir = new Vec3d(-point.x, -point.y, -point.z).normalize();
+        Vec3d normal = new Vec3d(point.x / length, point.y / length, point.z / length);
+
+        // Fresnel: dot product gives facing ratio
+        double facing = Math.abs(viewDir.dotProduct(normal));
+
+        // Invert and power for edge glow
+        double fresnel = Math.pow(1.0 - facing, 3.0);
+
+        return (float) (1.0 + fresnel * 2.0); // Base opacity + edge glow
+    }
+
+    /**
+     * Resize framebuffer when window size changes
+     */
+    public static void resize(int width, int height) {
+        if (domainFramebuffer != null) {
+            domainFramebuffer.resize(width, height, MinecraftClient.IS_SYSTEM_MAC);
+        }
+    }
+
+    /**
+     * Clean up resources
+     */
+    public static void dispose() {
+        if (domainFramebuffer != null) {
+            domainFramebuffer.delete();
+            domainFramebuffer = null;
+        }
+        initialized = false;
+        System.out.println("[PaperJJK] Domain renderer disposed");
+    }
+}

@@ -1,0 +1,6 @@
+{
+  "satin": {
+    "gl.GlUniformMixin": false,
+    "blockrenderlayer.RenderLayerMixin": false
+  }
+}

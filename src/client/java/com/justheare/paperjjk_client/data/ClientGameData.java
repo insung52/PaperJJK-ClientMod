@@ -139,6 +139,13 @@ public class ClientGameData {
     }
 
     /**
+     * Get active domains map (for renderer)
+     */
+    public static Map<UUID, ActiveDomain> getActiveDomains() {
+        return activeDomains;
+    }
+
+    /**
      * 쿨다운 정보 저장 클래스
      */
     public static class CooldownData {

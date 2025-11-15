@@ -1,16 +1,21 @@
 package com.justheare.paperjjk_client;
 
+import com.justheare.paperjjk_client.command.DebugCommand;
 import com.justheare.paperjjk_client.command.SkillConfigCommand;
 import com.justheare.paperjjk_client.data.ClientGameData;
 import com.justheare.paperjjk_client.keybind.JJKKeyBinds;
 import com.justheare.paperjjk_client.network.ClientPacketHandler;
-import com.justheare.paperjjk_client.render.DomainRenderer;
+import com.justheare.paperjjk_client.render.DebugRenderer;
+// import com.justheare.paperjjk_client.render.DomainRenderer;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.render.Camera;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.PacketByteBuf;
 import org.slf4j.Logger;
@@ -62,11 +67,16 @@ public class PaperJJKClientClient implements ClientModInitializer {
 		LOGGER.info("[4/5] 명령어 등록 중...");
 		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
 			SkillConfigCommand.register(dispatcher);
+			DebugCommand.register(dispatcher);
 		});
 
 		// 5. 이벤트 리스너 등록
 		LOGGER.info("[5/5] 이벤트 리스너 등록 중...");
 		registerEventListeners();
+
+		// 6. 도메인 렌더러 초기화 (disabled for now)
+		// LOGGER.info("[6/6] 도메인 셰이더 초기화 중...");
+		// DomainRenderer.init();
 
 		LOGGER.info("========================================");
 		LOGGER.info("  PaperJJK Client Mod 초기화 완료!");
@@ -88,14 +98,19 @@ public class PaperJJKClientClient implements ClientModInitializer {
 			LOGGER.info("서버 연결 해제: 데이터 정리");
 			ClientGameData.reset();
 			JJKKeyBinds.reset();
+			// DomainRenderer.dispose();
 		});
 
-		// 렌더링 이벤트: HUD 렌더링 시 도메인 구체 렌더링
-		HudRenderCallback.EVENT.register((drawContext, tickCounter) -> {
-			// Create a new MatrixStack for world rendering
-			net.minecraft.client.util.math.MatrixStack matrices = new net.minecraft.client.util.math.MatrixStack();
-			// tickDelta is not needed for our rendering
-			DomainRenderer.render(matrices, 1.0f);
+		// WorldRenderEvents를 사용한 렌더링
+		// AFTER_ENTITIES: 엔티티 렌더링 후, 반투명 지형 전에 실행
+		WorldRenderEvents.AFTER_ENTITIES.register((WorldRenderContext context) -> {
+			// Debug cube rendering
+			Camera camera = MinecraftClient.getInstance().gameRenderer.getCamera();
+			DebugRenderer.render(context.matrices(), camera, context.consumers());
+
+			// Domain rendering (disabled for now)
+			// float tickDelta = context.tickCounter().getTickDelta(true);
+			// DomainRenderer.render(context.matrices(), tickDelta, camera);
 		});
 
 		// 클라이언트 틱 이벤트: 도메인 반지름 업데이트
