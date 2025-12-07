@@ -26,6 +26,12 @@ public class DebugCommand {
                         .executes(DebugCommand::toggleEffect)
                     )
                 )
+                .then(literal("shader")
+                    .executes(DebugCommand::toggleShader)
+                )
+                .then(literal("methods")
+                    .executes(DebugCommand::inspectMethods)
+                )
         );
     }
 
@@ -60,6 +66,22 @@ public class DebugCommand {
             );
         }
 
+        return 1;
+    }
+
+    private static int toggleShader(CommandContext<FabricClientCommandSource> context) {
+        context.getSource().sendFeedback(
+            Text.literal("§d[PaperJJK Debug] §fShader command - To be implemented")
+        );
+        // TODO: Implement shader toggle
+        return 1;
+    }
+
+    private static int inspectMethods(CommandContext<FabricClientCommandSource> context) {
+        com.justheare.paperjjk_client.debug.GameRendererDebug.inspectMethods();
+        context.getSource().sendFeedback(
+            Text.literal("§e[PaperJJK Debug] §fGameRenderer methods logged to console")
+        );
         return 1;
     }
 }
