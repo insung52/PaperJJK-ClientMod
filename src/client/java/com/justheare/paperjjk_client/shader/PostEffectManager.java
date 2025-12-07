@@ -11,9 +11,14 @@ import net.minecraft.util.Identifier;
 public class PostEffectManager {
     private static boolean isActive = false;
 
-    // Test with vanilla creeper shader first
-    // Try short form without prefix/extension
+    // Custom red shader for testing
+    private static final Identifier CUSTOM_SHADER = Identifier.of("paperjjk_client", "jjk_red");
+
+    // Vanilla creeper for comparison
     private static final Identifier CREEPER_SHADER = Identifier.of("minecraft", "creeper");
+
+    // Current shader to use
+    private static final Identifier CURRENT_SHADER = CUSTOM_SHADER;
 
     /**
      * Toggle post-processing shader on/off
@@ -29,9 +34,9 @@ public class PostEffectManager {
         } else {
             // Enable
             try {
-                ((GameRendererAccessor) renderer).invokeSetPostProcessor(CREEPER_SHADER);
+                ((GameRendererAccessor) renderer).invokeSetPostProcessor(CURRENT_SHADER);
                 isActive = true;
-                System.out.println("[PaperJJK] Post-processor enabled: " + CREEPER_SHADER);
+                System.out.println("[PaperJJK] Post-processor enabled: " + CURRENT_SHADER);
             } catch (Exception e) {
                 System.err.println("[PaperJJK] Failed to enable post-processor:");
                 e.printStackTrace();

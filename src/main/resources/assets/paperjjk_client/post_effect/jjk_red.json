@@ -1,0 +1,29 @@
+{
+    "targets": {
+        "swap": {}
+    },
+    "passes": [
+        {
+            "vertex_shader": "paperjjk_client:core/blit",
+            "fragment_shader": "paperjjk_client:post/blit",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "minecraft:main"
+                }
+            ],
+            "output": "swap"
+        },
+        {
+            "vertex_shader": "paperjjk_client:core/blit",
+            "fragment_shader": "paperjjk_client:post/blit",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "swap"
+                }
+            ],
+            "output": "minecraft:main"
+        }
+    ]
+}
