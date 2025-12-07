@@ -70,10 +70,22 @@ public class DebugCommand {
     }
 
     private static int toggleShader(CommandContext<FabricClientCommandSource> context) {
+        // Check current post-processor first
+        net.minecraft.client.render.GameRenderer renderer = net.minecraft.client.MinecraftClient.getInstance().gameRenderer;
+        net.minecraft.util.Identifier currentId = renderer.getPostProcessorId();
+
         context.getSource().sendFeedback(
-            Text.literal("§d[PaperJJK Debug] §fShader command - To be implemented")
+            Text.literal("§e[Debug] Current post-processor: " + (currentId == null ? "§cNONE" : "§a" + currentId))
         );
-        // TODO: Implement shader toggle
+
+        com.justheare.paperjjk_client.shader.PostEffectManager.toggle();
+
+        String status = com.justheare.paperjjk_client.shader.PostEffectManager.isActive()
+            ? "§aENABLED" : "§cDISABLED";
+
+        context.getSource().sendFeedback(
+            Text.literal("§d[PaperJJK Debug] §fPost-processing shader " + status)
+        );
         return 1;
     }
 

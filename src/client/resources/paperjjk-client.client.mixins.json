@@ -2,7 +2,9 @@
 	"required": true,
 	"package": "com.justheare.paperjjk_client.mixin.client",
 	"compatibilityLevel": "JAVA_21",
-	"client": [],
+	"client": [
+		"GameRendererAccessor"
+	],
 	"injectors": {
 		"defaultRequire": 1
 	}
