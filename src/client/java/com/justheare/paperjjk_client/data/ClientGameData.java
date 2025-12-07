@@ -18,6 +18,7 @@ public class ClientGameData {
     private static float regenRate = 0.0f;
     private static String currentTechnique = "없음";
     private static boolean blocked = false;
+    public static boolean hasDebugRun = false;
 
     // 쿨다운 정보 (슬롯 번호 → 쿨다운 데이터)
     private static final Map<Byte, CooldownData> cooldowns = new HashMap<>();
@@ -62,17 +63,32 @@ public class ClientGameData {
     }
 
     // Getters
-    public static int getCurrentCE() { return currentCE; }
-    public static int getMaxCE() { return maxCE; }
-    public static float getRegenRate() { return regenRate; }
-    public static String getCurrentTechnique() { return currentTechnique; }
-    public static boolean isBlocked() { return blocked; }
+    public static int getCurrentCE() {
+        return currentCE;
+    }
+
+    public static int getMaxCE() {
+        return maxCE;
+    }
+
+    public static float getRegenRate() {
+        return regenRate;
+    }
+
+    public static String getCurrentTechnique() {
+        return currentTechnique;
+    }
+
+    public static boolean isBlocked() {
+        return blocked;
+    }
 
     /**
      * 주술력 퍼센트 (0.0 ~ 1.0)
      */
     public static float getCEPercentage() {
-        if (maxCE == 0) return 0;
+        if (maxCE == 0)
+            return 0;
         return (float) currentCE / maxCE;
     }
 
@@ -157,11 +173,17 @@ public class ClientGameData {
             this.maxTicks = maxTicks;
         }
 
-        public int getCurrentTicks() { return currentTicks; }
-        public int getMaxTicks() { return maxTicks; }
+        public int getCurrentTicks() {
+            return currentTicks;
+        }
+
+        public int getMaxTicks() {
+            return maxTicks;
+        }
 
         public float getPercentage() {
-            if (maxTicks == 0) return 0;
+            if (maxTicks == 0)
+                return 0;
             return (float) currentTicks / maxTicks;
         }
 
@@ -170,7 +192,7 @@ public class ClientGameData {
         }
 
         public float getSecondsRemaining() {
-            return currentTicks / 20.0f;  // 틱 → 초 변환
+            return currentTicks / 20.0f; // 틱 → 초 변환
         }
     }
 
@@ -183,11 +205,11 @@ public class ClientGameData {
         public Vec3d center;
         public float currentRadius;
         public float maxRadius;
-        public float expansionSpeed;  // blocks per tick (recalculated on sync)
+        public float expansionSpeed; // blocks per tick (recalculated on sync)
         public int color;
         public int domainType;
-        public long lastSyncTime;  // When we last received server update
-        public float serverRadius;  // Last known server radius
+        public long lastSyncTime; // When we last received server update
+        public float serverRadius; // Last known server radius
         public boolean isExpanding;
 
         /**
@@ -224,7 +246,7 @@ public class ClientGameData {
                 // Server radius increased - calculate new expansion speed
                 // Speed = how much server grew / time elapsed
                 float serverGrowth = newServerRadius - serverRadius;
-                float timeInTicks = timeSinceLastSync / 50.0f;  // ms to ticks (50ms per tick)
+                float timeInTicks = timeSinceLastSync / 50.0f; // ms to ticks (50ms per tick)
 
                 if (timeInTicks > 0) {
                     // Calculate speed to catch up smoothly
