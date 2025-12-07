@@ -1,0 +1,48 @@
+{
+    "targets": {
+        "swap": {}
+    },
+    "passes": [
+        {
+            "vertex_shader": "paperjjk_client:core/blit",
+            "fragment_shader": "paperjjk_client:post/refraction",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "minecraft:main"
+                }
+            ],
+            "output": "swap",
+            "uniforms": {
+                "RefractionConfig": [
+                    {
+                        "name": "EffectCenter",
+                        "type": "vec2",
+                        "value": [ 0.5, 0.5 ]
+                    },
+                    {
+                        "name": "EffectRadius",
+                        "type": "float",
+                        "value": 0.3
+                    },
+                    {
+                        "name": "EffectStrength",
+                        "type": "float",
+                        "value": 0.05
+                    }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "paperjjk_client:core/blit",
+            "fragment_shader": "paperjjk_client:post/blit",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "swap"
+                }
+            ],
+            "output": "minecraft:main"
+        }
+    ]
+}

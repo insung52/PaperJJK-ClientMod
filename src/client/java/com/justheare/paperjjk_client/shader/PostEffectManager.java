@@ -11,14 +11,15 @@ import net.minecraft.util.Identifier;
 public class PostEffectManager {
     private static boolean isActive = false;
 
-    // Custom red shader for testing
-    private static final Identifier CUSTOM_SHADER = Identifier.of("paperjjk_client", "jjk_red");
+    // Custom shaders
+    private static final Identifier RED_SHADER = Identifier.of("paperjjk_client", "jjk_red");
+    private static final Identifier REFRACTION_SHADER = Identifier.of("paperjjk_client", "refraction");
 
     // Vanilla creeper for comparison
     private static final Identifier CREEPER_SHADER = Identifier.of("minecraft", "creeper");
 
-    // Current shader to use
-    private static final Identifier CURRENT_SHADER = CUSTOM_SHADER;
+    // Current shader to use - REFRACTION (gravitational lens effect)
+    private static final Identifier CURRENT_SHADER = REFRACTION_SHADER;
 
     /**
      * Toggle post-processing shader on/off
