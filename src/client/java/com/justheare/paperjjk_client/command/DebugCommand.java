@@ -29,6 +29,9 @@ public class DebugCommand {
                 .then(literal("shader")
                     .executes(DebugCommand::toggleShader)
                 )
+                .then(literal("refraction")
+                    .executes(DebugCommand::addRefractionEffect)
+                )
                 .then(literal("methods")
                     .executes(DebugCommand::inspectMethods)
                 )
@@ -85,6 +88,27 @@ public class DebugCommand {
 
         context.getSource().sendFeedback(
             Text.literal("§d[PaperJJK Debug] §fPost-processing shader " + status)
+        );
+        return 1;
+    }
+
+    private static int addRefractionEffect(CommandContext<FabricClientCommandSource> context) {
+        // Get player position and add effect 10 blocks ahead
+        net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+        if (client.player == null) {
+            context.getSource().sendFeedback(Text.literal("§c[Error] No player found"));
+            return 0;
+        }
+
+        Vec3d playerPos = client.player.getEyePos();
+        Vec3d lookVec = client.player.getRotationVec(1.0f);
+        Vec3d effectPos = playerPos.add(lookVec.multiply(10));
+
+        com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(effectPos, 0.3f, 0.05f);
+
+        context.getSource().sendFeedback(
+            Text.literal("§d[PaperJJK Debug] §fAdded refraction effect at §e" +
+                String.format("(%.1f, %.1f, %.1f)", effectPos.x, effectPos.y, effectPos.z))
         );
         return 1;
     }
