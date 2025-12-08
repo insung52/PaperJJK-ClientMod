@@ -83,8 +83,11 @@ public class CustomPostProcessing {
             out vec4 fragColor;
 
             void main() {
+                // Flip only the effect center Y coordinate (screen space to texture space)
+                vec2 flippedCenter = vec2(uEffectCenter.x, 1.0 - uEffectCenter.y);
+
                 // Calculate vector from current pixel to effect center
-                vec2 toCenter = texCoord - uEffectCenter;
+                vec2 toCenter = texCoord - flippedCenter;
                 float dist = length(toCenter);
 
                 // Default: sample from current position (no distortion)
@@ -111,7 +114,24 @@ public class CustomPostProcessing {
                 }
 
                 // Sample the texture at the (possibly distorted) coordinates
-                fragColor = texture(uTexture, sampleCoord);
+                // Note: sampleCoord is already in flipped OpenGL space, so we can use it directly
+                vec4 color = texture(uTexture, sampleCoord);
+
+                // Add blue bloom effect at the center of distortion
+                if (dist < uEffectRadius) {
+                    // Stronger bloom at the center, fading toward edges
+                    float normalizedDist = dist / uEffectRadius;
+
+                    // Blue glow color (bright blue)
+                    vec3 bloomColor = vec3(0.2, 0.6, 1.0);
+
+                    // Add bloom with exponential falloff for more concentrated glow
+                    // Much stronger bloom intensity (50x stronger than distortion)
+                    float bloomFactor = exp(-normalizedDist * 4.0) * 5.0;
+                    color.rgb += bloomColor * bloomFactor;
+                }
+
+                fragColor = color;
             }
             """;
 
