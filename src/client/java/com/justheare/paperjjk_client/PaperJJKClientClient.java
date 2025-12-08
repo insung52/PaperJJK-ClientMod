@@ -161,13 +161,13 @@ public class PaperJJKClientClient implements ClientModInitializer {
 					float scaledRadius = (baseRadius * screenWidth) / Math.max(1.0f, distance / 10.0f);
 					int pixelRadius = (int) scaledRadius;
 
-					// Draw a simple square to verify rendering works
-					drawContext.fill(
-						pixelX - pixelRadius,
-						pixelY - pixelRadius,
-						pixelX + pixelRadius,
-						pixelY + pixelRadius,
-						0x80FF0000 // Red semi-transparent
+					// Render gravitational lens effect (circle visualization)
+					com.justheare.paperjjk_client.render.RefractionRenderer.renderGravitationalLens(
+						drawContext,
+						pixelX,
+						pixelY,
+						pixelRadius,
+						effect.strength
 					);
 				}
 			}

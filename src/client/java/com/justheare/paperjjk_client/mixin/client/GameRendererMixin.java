@@ -28,8 +28,10 @@ public class GameRendererMixin {
         // Only render if we have active effects and are in-game
         if (client.world == null || client.player == null) return;
 
-        RefractionEffectManager.RefractionEffect effect = RefractionEffectManager.getPrimaryEffect();
-        if (effect == null) return;
+        java.util.List<RefractionEffectManager.RefractionEffect> effects =
+            RefractionEffectManager.getEffects();
+
+        if (effects.isEmpty()) return;
 
         // Get camera and projection matrix
         GameRenderer renderer = (GameRenderer) (Object) this;
@@ -40,20 +42,25 @@ public class GameRendererMixin {
             )
         );
 
-        // Convert world position to screen coordinates
-        Vec3d screenPos = WorldToScreenUtil.worldToScreen(effect.worldPos, camera, projectionMatrix);
+        // Render each effect
+        for (RefractionEffectManager.RefractionEffect effect : effects) {
+            // Convert world position to screen coordinates
+            Vec3d screenPos = WorldToScreenUtil.worldToScreen(effect.worldPos, camera, projectionMatrix);
 
-        if (screenPos != null) {
-            System.out.println("[GameRendererMixin] Rendering refraction at screen: (" +
-                String.format("%.3f", screenPos.x) + ", " + String.format("%.3f", screenPos.y) + ")");
+            if (screenPos != null) {
+                // Calculate radius based on distance
+                float distance = (float) screenPos.z;
+                float baseRadius = effect.radius;
+                float scaledRadius = baseRadius / Math.max(1.0f, distance / 10.0f);
 
-            // Render custom post-processing with dynamic uniforms!
-            CustomPostProcessing.render(
-                (float) screenPos.x,
-                (float) screenPos.y,
-                effect.radius,
-                effect.strength
-            );
+                // Render custom post-processing with dynamic uniforms!
+                CustomPostProcessing.render(
+                    (float) screenPos.x,
+                    (float) screenPos.y,
+                    scaledRadius,
+                    effect.strength * 100.0f  // MUCH higher strength for visibility
+                );
+            }
         }
     }
 }

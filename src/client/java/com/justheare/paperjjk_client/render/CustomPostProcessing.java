@@ -134,6 +134,7 @@ public class CustomPostProcessing {
 
     /**
      * Render post-processing effect
+     * Copies framebuffer, applies distortion, and draws back
      */
     public static void render(float centerX, float centerY, float radius, float strength) {
         if (!initialized) {
@@ -164,13 +165,16 @@ public class CustomPostProcessing {
             // Save GL state
             int prevProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
             int prevVAO = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
+            int prevTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
             boolean depthTestEnabled = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
             boolean blendEnabled = GL11.glIsEnabled(GL11.GL_BLEND);
 
             // Setup render state for post-processing
             GL11.glDisable(GL11.GL_DEPTH_TEST);
-            GL11.glEnable(GL11.GL_BLEND);
-            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            GL11.glDisable(GL11.GL_BLEND); // No blending - replace entire screen
+
+            // Set viewport to match screen
+            GL11.glViewport(0, 0, mainFramebuffer.textureWidth, mainFramebuffer.textureHeight);
 
             // Bind VAO and shader program
             GL30.glBindVertexArray(vao);
@@ -180,20 +184,28 @@ public class CustomPostProcessing {
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
 
+            // Set texture parameters for proper sampling
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+
             // Set uniforms (THIS IS THE KEY - we can update these every frame!)
             GL20.glUniform2f(uEffectCenter, centerX, centerY);
             GL20.glUniform1f(uEffectRadius, radius);
             GL20.glUniform1f(uEffectStrength, strength);
             GL20.glUniform1i(uTexture, 0);
 
-            // Draw full-screen quad
+            // Draw full-screen quad (covers entire screen with distortion effect)
             GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
 
             // Restore previous state
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, prevTexture);
             GL20.glUseProgram(prevProgram);
             GL30.glBindVertexArray(prevVAO);
             if (depthTestEnabled) GL11.glEnable(GL11.GL_DEPTH_TEST);
-            if (!blendEnabled) GL11.glDisable(GL11.GL_BLEND);
+            if (blendEnabled) GL11.glEnable(GL11.GL_BLEND);
+
         } catch (Exception e) {
             System.err.println("[CustomPostProcessing] Error during render:");
             e.printStackTrace();
