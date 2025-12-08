@@ -3,6 +3,7 @@ package com.justheare.paperjjk_client.render;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.Framebuffer;
+import net.minecraft.client.gl.SimpleFramebuffer;
 import org.lwjgl.opengl.*;
 
 /**
@@ -20,6 +21,14 @@ public class CustomPostProcessing {
     private static int uEffectRadius = -1;
     private static int uEffectStrength = -1;
     private static int uTexture = -1;
+
+    // Temporary FBO and textures for post-processing
+    // We need TWO textures: one for reading (source), one for writing (destination)
+    private static int tempFbo = -1;
+    private static int sourceTexture = -1;  // Texture we read from (contains original frame)
+    private static int destTexture = -1;    // Texture we write to (contains distorted result)
+    private static int tempWidth = -1;
+    private static int tempHeight = -1;
 
     private static boolean initialized = false;
 
@@ -61,7 +70,7 @@ public class CustomPostProcessing {
             }
             """;
 
-        // Fragment shader (refraction effect)
+        // Fragment shader (Gravitational lens / refraction effect)
         String fragmentSource = """
             #version 330 core
 
@@ -74,17 +83,34 @@ public class CustomPostProcessing {
             out vec4 fragColor;
 
             void main() {
+                // Calculate vector from current pixel to effect center
                 vec2 toCenter = texCoord - uEffectCenter;
                 float dist = length(toCenter);
+
+                // Default: sample from current position (no distortion)
                 vec2 sampleCoord = texCoord;
 
-                if (dist < uEffectRadius && dist > 0.0) {
+                // Apply gravitational lens distortion if within radius
+                if (dist < uEffectRadius && dist > 0.0001) {
+                    // Normalize distance (0.0 at center, 1.0 at edge)
                     float normalizedDist = dist / uEffectRadius;
+
+                    // Smooth falloff from center to edge
                     float falloff = 1.0 - smoothstep(0.0, 1.0, normalizedDist);
+
+                    // Calculate distortion amount (stronger at center, weaker at edge)
+                    // Gravitational lensing pulls pixels TOWARD the center
                     float distortAmount = uEffectStrength * falloff / dist;
+
+                    // Apply distortion: move sample point toward center
+                    // This creates the "magnifying" effect of gravitational lensing
                     sampleCoord = texCoord + toCenter * distortAmount;
+
+                    // Clamp to valid texture coordinates
+                    sampleCoord = clamp(sampleCoord, 0.0, 1.0);
                 }
 
+                // Sample the texture at the (possibly distorted) coordinates
                 fragColor = texture(uTexture, sampleCoord);
             }
             """;
@@ -147,11 +173,101 @@ public class CustomPostProcessing {
             MinecraftClient client = MinecraftClient.getInstance();
             Framebuffer mainFramebuffer = client.getFramebuffer();
 
-            // Get the framebuffer's color texture ID using reflection
-            int textureId = getFramebufferTextureId(mainFramebuffer);
-            if (textureId == -1) {
-                System.err.println("[CustomPostProcessing] Failed to get framebuffer texture ID");
+            // In Minecraft 1.21, Framebuffer doesn't store FBO ID directly
+            // Instead, we use the currently bound FBO (set by Minecraft's rendering pipeline)
+            // During HudRenderCallback, the main framebuffer should already be bound
+
+            // First, try to get the color texture's GL ID
+            int mainTextureId = getFramebufferTextureId(mainFramebuffer);
+            if (mainTextureId == -1) {
+                System.err.println("[CustomPostProcessing] Failed to get main framebuffer texture ID");
                 return;
+            }
+
+            // Get the currently bound FBO - this should be Minecraft's rendering FBO
+            int currentFbo = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
+
+            // If it's FBO 0 (default framebuffer), we need a different approach
+            // Try to bind the colorAttachment's parent FBO by querying it
+            if (currentFbo == 0) {
+                // Bind the texture and check what FBO it belongs to
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, mainTextureId);
+
+                // Query which FBO this texture is attached to (this is hacky but might work)
+                // Actually, we can't query this directly. Let's create our own FBO for the main texture
+                System.out.println("[CustomPostProcessing] Current FBO is 0, creating wrapper FBO for main texture");
+
+                // We'll use a different strategy: don't copy FROM mainFbo, just render to it
+                currentFbo = 0; // Keep as 0, we'll handle this specially
+            }
+
+            int mainFbo = currentFbo;
+            System.out.println("[CustomPostProcessing] Current FBO binding: " + mainFbo +
+                ", Main texture ID: " + mainTextureId +
+                " (size: " + mainFramebuffer.textureWidth + "x" + mainFramebuffer.textureHeight + ")");
+
+            // Create or resize temp framebuffer if needed
+            if (tempFbo == -1 ||
+                tempWidth != mainFramebuffer.textureWidth ||
+                tempHeight != mainFramebuffer.textureHeight) {
+
+                // Save current FBO binding
+                int savedFbo = mainFbo;
+
+                // Delete old resources
+                if (tempFbo != -1) {
+                    GL30.glDeleteFramebuffers(tempFbo);
+                }
+                if (sourceTexture != -1) {
+                    GL11.glDeleteTextures(sourceTexture);
+                }
+                if (destTexture != -1) {
+                    GL11.glDeleteTextures(destTexture);
+                }
+
+                // Create source texture (will hold copy of main framebuffer)
+                sourceTexture = GL11.glGenTextures();
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, sourceTexture);
+                GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8,
+                    mainFramebuffer.textureWidth, mainFramebuffer.textureHeight,
+                    0, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, (java.nio.ByteBuffer) null);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+
+                // Create destination texture (will hold distorted result)
+                destTexture = GL11.glGenTextures();
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, destTexture);
+                GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8,
+                    mainFramebuffer.textureWidth, mainFramebuffer.textureHeight,
+                    0, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, (java.nio.ByteBuffer) null);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+
+                // Create FBO and attach destination texture
+                tempFbo = GL30.glGenFramebuffers();
+                System.out.println("[CustomPostProcessing] glGenFramebuffers() returned: " + tempFbo +
+                    " (savedFbo was: " + savedFbo + ")");
+                GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, tempFbo);
+                GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
+                    GL11.GL_TEXTURE_2D, destTexture, 0);
+
+                int status = GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER);
+                if (status != GL30.GL_FRAMEBUFFER_COMPLETE) {
+                    System.err.println("[CustomPostProcessing] Framebuffer incomplete: " + status);
+                    GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, savedFbo);
+                    return;
+                }
+
+                // Restore previous FBO binding
+                GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, savedFbo);
+
+                tempWidth = mainFramebuffer.textureWidth;
+                tempHeight = mainFramebuffer.textureHeight;
+
+                System.out.println("[CustomPostProcessing] Created temp framebuffer ID=" + tempFbo +
+                    " size=" + tempWidth + "x" + tempHeight);
             }
 
             // Log every 5 seconds
@@ -162,53 +278,170 @@ public class CustomPostProcessing {
                     ", strength=" + String.format("%.3f", strength));
             }
 
-            // Save GL state
-            int prevProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
-            int prevVAO = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
-            int prevTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
-            boolean depthTestEnabled = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
-            boolean blendEnabled = GL11.glIsEnabled(GL11.GL_BLEND);
+            // Log FBO IDs for debugging
+            System.out.println("[CustomPostProcessing] Main FBO: " + mainFbo +
+                ", Temp FBO: " + tempFbo +
+                ", Main Texture: " + mainTextureId);
 
-            // Setup render state for post-processing
+            // CRITICAL: If tempFbo and mainFbo are the same, we can't proceed!
+            if (tempFbo == mainFbo && mainFbo != 0) {
+                System.err.println("[CustomPostProcessing] ERROR: tempFbo == mainFbo (" + tempFbo + "), cannot render to same framebuffer!");
+                return;
+            }
+
+            // STEP 2: Copy main texture to our source texture
+            // Strategy depends on whether mainFbo is 0 or not
+            if (mainFbo == 0) {
+                // FBO 0: We can't use glCopyTexSubImage2D from it
+                // Instead, we'll use glBlitFramebuffer or texture-to-texture copy
+                // For now, bind mainTextureId and copy it to sourceTexture using a blit
+                System.out.println("[CustomPostProcessing] Using texture blit (FBO 0 detected)");
+
+                // Create a temporary FBO to hold mainTextureId so we can blit from it
+                int tempReadFbo = GL30.glGenFramebuffers();
+                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, tempReadFbo);
+                GL30.glFramebufferTexture2D(GL30.GL_READ_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
+                    GL11.GL_TEXTURE_2D, mainTextureId, 0);
+
+                // Attach sourceTexture to a write FBO
+                int tempWriteFbo = GL30.glGenFramebuffers();
+                GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, tempWriteFbo);
+                GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
+                    GL11.GL_TEXTURE_2D, sourceTexture, 0);
+
+                // Blit from mainTexture to sourceTexture
+                GL30.glBlitFramebuffer(0, 0, tempWidth, tempHeight,
+                    0, 0, tempWidth, tempHeight,
+                    GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
+
+                // Cleanup temp FBOs
+                GL30.glDeleteFramebuffers(tempReadFbo);
+                GL30.glDeleteFramebuffers(tempWriteFbo);
+
+                System.out.println("[CustomPostProcessing] Copied main texture to source texture via blit");
+            } else {
+                // Normal FBO: use glCopyTexSubImage2D
+                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, mainFbo);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, sourceTexture);
+                GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, tempWidth, tempHeight);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+
+                System.out.println("[CustomPostProcessing] Copied main framebuffer to source texture");
+            }
+
+            // STEP 3: Render distorted version from sourceTexture to destTexture (via tempFbo)
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, tempFbo);
+            GL11.glViewport(0, 0, tempWidth, tempHeight);
+
             GL11.glDisable(GL11.GL_DEPTH_TEST);
-            GL11.glDisable(GL11.GL_BLEND); // No blending - replace entire screen
+            GL11.glDisable(GL11.GL_BLEND);
 
-            // Set viewport to match screen
-            GL11.glViewport(0, 0, mainFramebuffer.textureWidth, mainFramebuffer.textureHeight);
-
-            // Bind VAO and shader program
             GL30.glBindVertexArray(vao);
             GL20.glUseProgram(shaderProgram);
 
-            // Bind framebuffer texture
+            // Bind the source texture (undistorted frame)
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, textureId);
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, sourceTexture);
 
-            // Set texture parameters for proper sampling
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
-
-            // Set uniforms (THIS IS THE KEY - we can update these every frame!)
+            // Set uniforms for distortion
             GL20.glUniform2f(uEffectCenter, centerX, centerY);
             GL20.glUniform1f(uEffectRadius, radius);
             GL20.glUniform1f(uEffectStrength, strength);
             GL20.glUniform1i(uTexture, 0);
 
-            // Draw full-screen quad (covers entire screen with distortion effect)
+            // Draw distorted quad to destTexture (attached to tempFbo)
             GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
 
-            // Restore previous state
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, prevTexture);
-            GL20.glUseProgram(prevProgram);
-            GL30.glBindVertexArray(prevVAO);
-            if (depthTestEnabled) GL11.glEnable(GL11.GL_DEPTH_TEST);
-            if (blendEnabled) GL11.glEnable(GL11.GL_BLEND);
+            System.out.println("[CustomPostProcessing] Drew distorted quad to dest texture");
+
+            // STEP 4: Copy distorted image back to main framebuffer texture
+            if (mainFbo == 0) {
+                // FBO 0: Use blit from destTexture to mainTextureId
+                System.out.println("[CustomPostProcessing] Blitting back to main texture (FBO 0)");
+
+                // Create temp FBO for mainTextureId
+                int tempWriteFbo = GL30.glGenFramebuffers();
+                GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, tempWriteFbo);
+                GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
+                    GL11.GL_TEXTURE_2D, mainTextureId, 0);
+
+                // Read from tempFbo (which has destTexture)
+                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, tempFbo);
+
+                // Blit
+                GL30.glBlitFramebuffer(0, 0, tempWidth, tempHeight,
+                    0, 0, tempWidth, tempHeight,
+                    GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
+
+                // Cleanup
+                GL30.glDeleteFramebuffers(tempWriteFbo);
+
+                System.out.println("[CustomPostProcessing] Copied distorted image back to main texture");
+            } else {
+                // Normal FBO: Copy from tempFbo to mainFbo
+                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, tempFbo);
+                GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, mainFbo);
+
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, mainTextureId);
+                GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, tempWidth, tempHeight);
+
+                System.out.println("[CustomPostProcessing] Copied distorted image back to main framebuffer");
+            }
+
+            // Restore state
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+            GL30.glBindVertexArray(0);
+            GL20.glUseProgram(0);
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, mainFbo);
 
         } catch (Exception e) {
             System.err.println("[CustomPostProcessing] Error during render:");
             e.printStackTrace();
+        }
+    }
+
+    /**
+     * Get framebuffer FBO ID via reflection
+     */
+    private static int getFramebufferFboId(Framebuffer framebuffer) {
+        try {
+            // Debug: Print all fields to find the correct one
+            System.out.println("[CustomPostProcessing] Framebuffer fields:");
+            for (java.lang.reflect.Field field : Framebuffer.class.getDeclaredFields()) {
+                System.out.println("  - " + field.getName() + " (" + field.getType().getSimpleName() + ")");
+            }
+
+            // Try common field names
+            String[] possibleNames = {"fbo", "glId", "id", "framebufferId", "framebuffer"};
+            for (String fieldName : possibleNames) {
+                try {
+                    java.lang.reflect.Field field = Framebuffer.class.getDeclaredField(fieldName);
+                    field.setAccessible(true);
+                    Object value = field.get(framebuffer);
+
+                    // If it's an int, return it directly
+                    if (value instanceof Integer) {
+                        int id = (int) value;
+                        System.out.println("[CustomPostProcessing] Found FBO ID in field '" + fieldName + "': " + id);
+                        return id;
+                    }
+
+                    // If it's an object with getGlId(), call it
+                    try {
+                        java.lang.reflect.Method getGlIdMethod = value.getClass().getMethod("getGlId");
+                        int id = (int) getGlIdMethod.invoke(value);
+                        System.out.println("[CustomPostProcessing] Found FBO ID via " + fieldName + ".getGlId(): " + id);
+                        return id;
+                    } catch (Exception ignored) {}
+                } catch (NoSuchFieldException ignored) {}
+            }
+
+            System.err.println("[CustomPostProcessing] Could not find FBO ID in any known field");
+            return -1;
+        } catch (Exception e) {
+            System.err.println("[CustomPostProcessing] Failed to get FBO ID: " + e.getMessage());
+            e.printStackTrace();
+            return -1;
         }
     }
 
@@ -246,6 +479,18 @@ public class CustomPostProcessing {
         }
         if (vao != -1) {
             GL30.glDeleteVertexArrays(vao);
+        }
+        if (tempFbo != -1) {
+            GL30.glDeleteFramebuffers(tempFbo);
+            tempFbo = -1;
+        }
+        if (sourceTexture != -1) {
+            GL11.glDeleteTextures(sourceTexture);
+            sourceTexture = -1;
+        }
+        if (destTexture != -1) {
+            GL11.glDeleteTextures(destTexture);
+            destTexture = -1;
         }
         initialized = false;
     }
