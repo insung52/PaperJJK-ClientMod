@@ -32,6 +32,9 @@ public class DebugCommand {
                 .then(literal("refraction")
                     .executes(DebugCommand::addRefractionEffect)
                 )
+                .then(literal("clear")
+                    .executes(DebugCommand::clearRefractionEffects)
+                )
                 .then(literal("methods")
                     .executes(DebugCommand::inspectMethods)
                 )
@@ -117,6 +120,14 @@ public class DebugCommand {
         com.justheare.paperjjk_client.debug.GameRendererDebug.inspectMethods();
         context.getSource().sendFeedback(
             Text.literal("§e[PaperJJK Debug] §fGameRenderer methods logged to console")
+        );
+        return 1;
+    }
+
+    private static int clearRefractionEffects(CommandContext<FabricClientCommandSource> context) {
+        com.justheare.paperjjk_client.shader.RefractionEffectManager.clearEffects();
+        context.getSource().sendFeedback(
+            Text.literal("§d[PaperJJK Debug] §fCleared all refraction effects")
         );
         return 1;
     }

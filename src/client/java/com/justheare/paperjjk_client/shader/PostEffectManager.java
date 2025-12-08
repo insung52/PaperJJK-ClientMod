@@ -45,6 +45,18 @@ public class PostEffectManager {
         }
     }
 
+    /**
+     * Reload the post-processor to apply new uniform values
+     */
+    public static void reload() {
+        if (isActive) {
+            GameRenderer renderer = MinecraftClient.getInstance().gameRenderer;
+            renderer.clearPostProcessor();
+            ((GameRendererAccessor) renderer).invokeSetPostProcessor(CURRENT_SHADER);
+            System.out.println("[PaperJJK] Post-processor reloaded");
+        }
+    }
+
     public static boolean isActive() {
         return isActive;
     }

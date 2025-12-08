@@ -23,6 +23,8 @@ import java.util.List;
 @Mixin(PostEffectProcessor.class)
 public class PostEffectProcessorMixin {
     private static boolean refractionInspected = false;
+    private static long lastReloadTime = 0;
+    private static final long RELOAD_INTERVAL_MS = 50; // Reload every 50ms (20 times per second)
 
     @Inject(method = "render", at = @At("HEAD"))
     private void onRender(FrameGraphBuilder frameGraphBuilder, int width, int height,
@@ -39,13 +41,8 @@ public class PostEffectProcessorMixin {
             refractionInspected = true;
         }
 
-        // Update refraction uniforms if this is refraction shader and we have an active effect
-        if (isRefractionShader) {
-            RefractionEffectManager.RefractionEffect effect = RefractionEffectManager.getPrimaryEffect();
-            if (effect != null) {
-                updateRefractionUniforms(processor, effect);
-            }
-        }
+        // Note: Uniform buffers are immutable in Minecraft 1.21
+        // Cannot update at runtime - would need custom rendering pipeline
     }
 
     private boolean isRefractionShader(PostEffectProcessor processor) {
