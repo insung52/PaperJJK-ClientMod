@@ -26,7 +26,7 @@ public class GameRendererMixin {
 
         if (effects.isEmpty()) return;
 
-        System.out.println("[GameRendererMixin] renderWorld RETURN - applying post-processing!");
+        //System.out.println("[GameRendererMixin] renderWorld RETURN - applying post-processing!");
 
         // Get camera and projection matrix
         net.minecraft.client.render.Camera camera = client.gameRenderer.getCamera();
@@ -49,10 +49,10 @@ public class GameRendererMixin {
                 float scaledRadius = baseRadius / Math.max(1.0f, distance / 10.0f);
                 float finalStrength = effect.strength * 0.1f;
 
-                System.out.println("[GameRendererMixin] Applying distortion: center=(" +
+                /*.out.println("[GameRendererMixin] Applying distortion: center=(" +
                     String.format("%.3f", screenPos.x) + "," + String.format("%.3f", screenPos.y) +
                     ") radius=" + String.format("%.3f", scaledRadius) +
-                    " strength=" + String.format("%.3f", finalStrength));
+                    " strength=" + String.format("%.3f", finalStrength));*/
 
                 // Apply custom post-processing
                 com.justheare.paperjjk_client.render.CustomPostProcessing.render(

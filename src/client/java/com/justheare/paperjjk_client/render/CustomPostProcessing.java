@@ -21,6 +21,7 @@ public class CustomPostProcessing {
     private static int uEffectRadius = -1;
     private static int uEffectStrength = -1;
     private static int uTexture = -1;
+    private static int uAspectRatio = -1;
 
     // Temporary FBO and textures for post-processing
     // We need TWO textures: one for reading (source), one for writing (destination)
@@ -46,7 +47,6 @@ public class CustomPostProcessing {
             vao = GL30.glGenVertexArrays();
 
             initialized = true;
-            System.out.println("[CustomPostProcessing] Initialized successfully");
         } catch (Exception e) {
             System.err.println("[CustomPostProcessing] Failed to initialize:");
             e.printStackTrace();
@@ -78,6 +78,7 @@ public class CustomPostProcessing {
             uniform vec2 uEffectCenter;
             uniform float uEffectRadius;
             uniform float uEffectStrength;
+            uniform float uAspectRatio;
 
             in vec2 texCoord;
             out vec4 fragColor;
@@ -86,8 +87,12 @@ public class CustomPostProcessing {
                 // Flip only the effect center Y coordinate (screen space to texture space)
                 vec2 flippedCenter = vec2(uEffectCenter.x, 1.0 - uEffectCenter.y);
 
-                // Calculate vector from current pixel to effect center
-                vec2 toCenter = texCoord - flippedCenter;
+                // Apply aspect ratio correction to make circular effects actually circular
+                vec2 aspectCorrectedTexCoord = vec2(texCoord.x * uAspectRatio, texCoord.y);
+                vec2 aspectCorrectedCenter = vec2(flippedCenter.x * uAspectRatio, flippedCenter.y);
+
+                // Calculate vector from current pixel to effect center (with aspect ratio correction)
+                vec2 toCenter = aspectCorrectedTexCoord - aspectCorrectedCenter;
                 float dist = length(toCenter);
 
                 // Default: sample from current position (no distortion)
@@ -174,8 +179,8 @@ public class CustomPostProcessing {
         uEffectCenter = GL20.glGetUniformLocation(shaderProgram, "uEffectCenter");
         uEffectRadius = GL20.glGetUniformLocation(shaderProgram, "uEffectRadius");
         uEffectStrength = GL20.glGetUniformLocation(shaderProgram, "uEffectStrength");
+        uAspectRatio = GL20.glGetUniformLocation(shaderProgram, "uAspectRatio");
 
-        System.out.println("[CustomPostProcessing] Shaders compiled successfully");
     }
 
     /**
@@ -215,16 +220,16 @@ public class CustomPostProcessing {
 
                 // Query which FBO this texture is attached to (this is hacky but might work)
                 // Actually, we can't query this directly. Let's create our own FBO for the main texture
-                System.out.println("[CustomPostProcessing] Current FBO is 0, creating wrapper FBO for main texture");
+                //System.out.println("[CustomPostProcessing] Current FBO is 0, creating wrapper FBO for main texture");
 
                 // We'll use a different strategy: don't copy FROM mainFbo, just render to it
                 currentFbo = 0; // Keep as 0, we'll handle this specially
             }
 
             int mainFbo = currentFbo;
-            System.out.println("[CustomPostProcessing] Current FBO binding: " + mainFbo +
+            /*System.out.println("[CustomPostProcessing] Current FBO binding: " + mainFbo +
                 ", Main texture ID: " + mainTextureId +
-                " (size: " + mainFramebuffer.textureWidth + "x" + mainFramebuffer.textureHeight + ")");
+                " (size: " + mainFramebuffer.textureWidth + "x" + mainFramebuffer.textureHeight + ")");*/
 
             // Create or resize temp framebuffer if needed
             if (tempFbo == -1 ||
@@ -267,8 +272,6 @@ public class CustomPostProcessing {
 
                 // Create FBO and attach destination texture
                 tempFbo = GL30.glGenFramebuffers();
-                System.out.println("[CustomPostProcessing] glGenFramebuffers() returned: " + tempFbo +
-                    " (savedFbo was: " + savedFbo + ")");
                 GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, tempFbo);
                 GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
                     GL11.GL_TEXTURE_2D, destTexture, 0);
@@ -285,23 +288,8 @@ public class CustomPostProcessing {
 
                 tempWidth = mainFramebuffer.textureWidth;
                 tempHeight = mainFramebuffer.textureHeight;
-
-                System.out.println("[CustomPostProcessing] Created temp framebuffer ID=" + tempFbo +
-                    " size=" + tempWidth + "x" + tempHeight);
             }
 
-            // Log every 5 seconds
-            if (System.currentTimeMillis() % 5000 < 16) {
-                System.out.println("[CustomPostProcessing] Rendering effect: center=(" +
-                    String.format("%.3f", centerX) + ", " + String.format("%.3f", centerY) +
-                    "), radius=" + String.format("%.3f", radius) +
-                    ", strength=" + String.format("%.3f", strength));
-            }
-
-            // Log FBO IDs for debugging
-            System.out.println("[CustomPostProcessing] Main FBO: " + mainFbo +
-                ", Temp FBO: " + tempFbo +
-                ", Main Texture: " + mainTextureId);
 
             // CRITICAL: If tempFbo and mainFbo are the same, we can't proceed!
             if (tempFbo == mainFbo && mainFbo != 0) {
@@ -314,9 +302,6 @@ public class CustomPostProcessing {
             if (mainFbo == 0) {
                 // FBO 0: We can't use glCopyTexSubImage2D from it
                 // Instead, we'll use glBlitFramebuffer or texture-to-texture copy
-                // For now, bind mainTextureId and copy it to sourceTexture using a blit
-                System.out.println("[CustomPostProcessing] Using texture blit (FBO 0 detected)");
-
                 // Create a temporary FBO to hold mainTextureId so we can blit from it
                 int tempReadFbo = GL30.glGenFramebuffers();
                 GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, tempReadFbo);
@@ -337,16 +322,12 @@ public class CustomPostProcessing {
                 // Cleanup temp FBOs
                 GL30.glDeleteFramebuffers(tempReadFbo);
                 GL30.glDeleteFramebuffers(tempWriteFbo);
-
-                System.out.println("[CustomPostProcessing] Copied main texture to source texture via blit");
             } else {
                 // Normal FBO: use glCopyTexSubImage2D
                 GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, mainFbo);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, sourceTexture);
                 GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, tempWidth, tempHeight);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
-
-                System.out.println("[CustomPostProcessing] Copied main framebuffer to source texture");
             }
 
             // STEP 3: Render distorted version from sourceTexture to destTexture (via tempFbo)
@@ -363,22 +344,22 @@ public class CustomPostProcessing {
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, sourceTexture);
 
+            // Calculate aspect ratio (width / height)
+            float aspectRatio = (float) tempWidth / (float) tempHeight;
+
             // Set uniforms for distortion
             GL20.glUniform2f(uEffectCenter, centerX, centerY);
-            GL20.glUniform1f(uEffectRadius, radius);
-            GL20.glUniform1f(uEffectStrength, strength);
+            GL20.glUniform1f(uEffectRadius, radius*2.0f);
+            GL20.glUniform1f(uEffectStrength, strength * 6.0f); // 왜곡 강도 3배 증가
+            GL20.glUniform1f(uAspectRatio, aspectRatio);
             GL20.glUniform1i(uTexture, 0);
 
             // Draw distorted quad to destTexture (attached to tempFbo)
             GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
 
-            System.out.println("[CustomPostProcessing] Drew distorted quad to dest texture");
-
             // STEP 4: Copy distorted image back to main framebuffer texture
             if (mainFbo == 0) {
                 // FBO 0: Use blit from destTexture to mainTextureId
-                System.out.println("[CustomPostProcessing] Blitting back to main texture (FBO 0)");
-
                 // Create temp FBO for mainTextureId
                 int tempWriteFbo = GL30.glGenFramebuffers();
                 GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, tempWriteFbo);
@@ -395,8 +376,6 @@ public class CustomPostProcessing {
 
                 // Cleanup
                 GL30.glDeleteFramebuffers(tempWriteFbo);
-
-                System.out.println("[CustomPostProcessing] Copied distorted image back to main texture");
             } else {
                 // Normal FBO: Copy from tempFbo to mainFbo
                 GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, tempFbo);
@@ -404,8 +383,6 @@ public class CustomPostProcessing {
 
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, mainTextureId);
                 GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, tempWidth, tempHeight);
-
-                System.out.println("[CustomPostProcessing] Copied distorted image back to main framebuffer");
             }
 
             // Restore state
