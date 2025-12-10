@@ -125,19 +125,39 @@ public class CustomPostProcessing {
                 // Note: sampleCoord is already in flipped OpenGL space, so we can use it directly
                 vec4 color = texture(uTexture, sampleCoord);
 
-                // Add blue bloom effect at the center of distortion
+                // Step 4: DEBUG - Visualize depth with multiple tests
                 if (dist < uEffectRadius) {
-                    // Stronger bloom at the center, fading toward edges
+                    // Sample depth texture
+                    vec4 depthSample = texture(uDepthTexture, texCoord);
+                    float depthValue = depthSample.r;
+
+                    // TEST 1: Show raw depth value as grayscale
+                    color.rgb = vec3(depthValue);
+
+                    // TEST 2: If depth is exactly 1.0 everywhere, show RED
+                    if (depthValue > 0.999) {
+                        color.rgb = vec3(1.0, 0.0, 0.0);  // RED = depth is 1.0 (problem!)
+                    }
+
+                    // TEST 3: If depth is exactly 0.0 everywhere, show BLUE
+                    if (depthValue < 0.001) {
+                        color.rgb = vec3(0.0, 0.0, 1.0);  // BLUE = depth is 0.0 (problem!)
+                    }
+
+                    // TEST 4: Show all 4 channels to debug
+                    // Uncomment to see R,G,B,A channels:
+                    // color.rgb = vec3(depthSample.r, depthSample.g, depthSample.b);
+                }
+
+                // Blue bloom disabled for now to see depth clearly
+                /*
+                if (dist < uEffectRadius) {
                     float normalizedDist = dist / uEffectRadius;
-
-                    // Blue glow color (bright blue)
                     vec3 bloomColor = vec3(0.2, 0.6, 1.0);
-
-                    // Add bloom with exponential falloff for more concentrated glow
-                    // Much stronger bloom intensity (50x stronger than distortion)
                     float bloomFactor = exp(-normalizedDist * 4.0) * 5.0;
                     color.rgb += bloomColor * bloomFactor;
                 }
+                */
 
                 fragColor = color;
             }
@@ -432,14 +452,15 @@ public class CustomPostProcessing {
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, sourceTexture);
 
-            // Step 3: Bind copied depth texture to unit 5 (avoiding unit 1 which Minecraft uses)
-            if (depthTextureId != -1 && copiedDepthTexture != -1) {
+            // Step 3: TEST - Bind ORIGINAL depth texture directly (not copied)
+            if (depthTextureId != -1) {
                 // Use GL_TEXTURE5 instead of GL_TEXTURE1
                 GL13.glActiveTexture(GL13.GL_TEXTURE5);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, copiedDepthTexture);
+                // TESTING: Use original depth texture instead of copied one
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, depthTextureId);
                 // CRITICAL: Restore to unit 0 immediately
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
-                System.out.println("[CustomPostProcessing] Step 3: Depth texture bound to unit 5");
+                System.out.println("[CustomPostProcessing] Step 3: ORIGINAL depth texture bound to unit 5 (testing)");
             }
 
             // Calculate aspect ratio (width / height)
@@ -460,7 +481,7 @@ public class CustomPostProcessing {
             GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
 
             // CRITICAL: Immediately unbind depth texture from unit 5 BEFORE any other operations
-            if (depthTextureId != -1 && copiedDepthTexture != -1) {
+            if (depthTextureId != -1) {
                 GL13.glActiveTexture(GL13.GL_TEXTURE5);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
@@ -501,7 +522,7 @@ public class CustomPostProcessing {
 
             // Restore state - unbind all textures properly
             // Step 3: Unbind depth texture from unit 5 if it was used (double-check)
-            if (depthTextureId != -1 && copiedDepthTexture != -1) {
+            if (depthTextureId != -1) {
                 GL13.glActiveTexture(GL13.GL_TEXTURE5);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
                 System.out.println("[CustomPostProcessing] Step 3: Final unbind depth from unit 5");
