@@ -21,6 +21,7 @@ public class CustomPostProcessing {
     private static int uEffectRadius = -1;
     private static int uEffectStrength = -1;
     private static int uTexture = -1;
+    private static int uDepthTexture = -1;  // Step 1: Add depth texture uniform location
     private static int uAspectRatio = -1;
 
     // Temporary FBO and textures for post-processing
@@ -28,6 +29,7 @@ public class CustomPostProcessing {
     private static int tempFbo = -1;
     private static int sourceTexture = -1;  // Texture we read from (contains original frame)
     private static int destTexture = -1;    // Texture we write to (contains distorted result)
+    private static int copiedDepthTexture = -1;  // Step 2: Copied depth texture (GL_DEPTH_COMPONENT32)
     private static int tempWidth = -1;
     private static int tempHeight = -1;
 
@@ -75,6 +77,7 @@ public class CustomPostProcessing {
             #version 330 core
 
             uniform sampler2D uTexture;
+            uniform sampler2D uDepthTexture;  // Step 1: Add depth texture uniform (not used yet)
             uniform vec2 uEffectCenter;
             uniform float uEffectRadius;
             uniform float uEffectStrength;
@@ -176,6 +179,7 @@ public class CustomPostProcessing {
 
         // Get uniform locations
         uTexture = GL20.glGetUniformLocation(shaderProgram, "uTexture");
+        uDepthTexture = GL20.glGetUniformLocation(shaderProgram, "uDepthTexture");  // Step 1
         uEffectCenter = GL20.glGetUniformLocation(shaderProgram, "uEffectCenter");
         uEffectRadius = GL20.glGetUniformLocation(shaderProgram, "uEffectRadius");
         uEffectStrength = GL20.glGetUniformLocation(shaderProgram, "uEffectStrength");
@@ -207,6 +211,14 @@ public class CustomPostProcessing {
             if (mainTextureId == -1) {
                 System.err.println("[CustomPostProcessing] Failed to get main framebuffer texture ID");
                 return;
+            }
+
+            // Step 2: Get depth texture ID for copying
+            int depthTextureId = getFramebufferDepthTextureId(mainFramebuffer);
+            if (depthTextureId == -1) {
+                System.err.println("[CustomPostProcessing] Step 2: WARNING - No depth texture available, occlusion disabled");
+            } else {
+                System.out.println("[CustomPostProcessing] Step 2: Depth texture ID: " + depthTextureId);
             }
 
             // Get the currently bound FBO - this should be Minecraft's rendering FBO
@@ -249,6 +261,9 @@ public class CustomPostProcessing {
                 if (destTexture != -1) {
                     GL11.glDeleteTextures(destTexture);
                 }
+                if (copiedDepthTexture != -1) {
+                    GL11.glDeleteTextures(copiedDepthTexture);
+                }
 
                 // Create source texture (will hold copy of main framebuffer)
                 sourceTexture = GL11.glGenTextures();
@@ -269,6 +284,21 @@ public class CustomPostProcessing {
                 GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
                 GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+
+                // Step 2: Create copied depth texture (GL_DEPTH_COMPONENT32)
+                // CRITICAL: Must ensure active texture unit is 0 before creating textures
+                GL13.glActiveTexture(GL13.GL_TEXTURE0);
+                copiedDepthTexture = GL11.glGenTextures();
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, copiedDepthTexture);
+                GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL14.GL_DEPTH_COMPONENT32,
+                    mainFramebuffer.textureWidth, mainFramebuffer.textureHeight,
+                    0, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, (java.nio.ByteBuffer) null);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+                System.out.println("[CustomPostProcessing] Step 2: Created copied depth texture");
 
                 // Create FBO and attach destination texture
                 tempFbo = GL30.glGenFramebuffers();
@@ -325,6 +355,46 @@ public class CustomPostProcessing {
                 // Unbind read/draw framebuffers to clean state
                 GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, 0);
                 GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, 0);
+
+                // Step 2: Copy depth texture data (if available)
+                if (depthTextureId != -1) {
+                    int tempDepthReadFbo = GL30.glGenFramebuffers();
+                    int tempDepthWriteFbo = GL30.glGenFramebuffers();
+
+                    // Attach source depth texture to read FBO
+                    GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, tempDepthReadFbo);
+                    GL30.glFramebufferTexture2D(GL30.GL_READ_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT,
+                        GL11.GL_TEXTURE_2D, depthTextureId, 0);
+
+                    // Check read FBO status
+                    int readStatus = GL30.glCheckFramebufferStatus(GL30.GL_READ_FRAMEBUFFER);
+                    if (readStatus == GL30.GL_FRAMEBUFFER_COMPLETE) {
+                        // Attach copied depth texture to write FBO
+                        GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, tempDepthWriteFbo);
+                        GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT,
+                            GL11.GL_TEXTURE_2D, copiedDepthTexture, 0);
+
+                        // Check write FBO status
+                        int writeStatus = GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER);
+                        if (writeStatus == GL30.GL_FRAMEBUFFER_COMPLETE) {
+                            // Blit depth buffer
+                            GL30.glBlitFramebuffer(0, 0, tempWidth, tempHeight,
+                                0, 0, tempWidth, tempHeight,
+                                GL11.GL_DEPTH_BUFFER_BIT, GL11.GL_NEAREST);
+                            System.out.println("[CustomPostProcessing] Step 2: Depth data copied successfully");
+                        } else {
+                            System.err.println("[CustomPostProcessing] Step 2: Write FBO incomplete: " + writeStatus);
+                        }
+                    } else {
+                        System.err.println("[CustomPostProcessing] Step 2: Read FBO incomplete: " + readStatus);
+                    }
+
+                    // Cleanup and restore state
+                    GL30.glDeleteFramebuffers(tempDepthReadFbo);
+                    GL30.glDeleteFramebuffers(tempDepthWriteFbo);
+                    GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, 0);
+                    GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, 0);
+                }
             } else {
                 // Normal FBO: use glCopyTexSubImage2D
                 GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, mainFbo);
@@ -456,6 +526,32 @@ public class CustomPostProcessing {
         } catch (Exception e) {
             System.err.println("[CustomPostProcessing] Failed to get FBO ID: " + e.getMessage());
             e.printStackTrace();
+            return -1;
+        }
+    }
+
+    /**
+     * Get framebuffer depth texture ID via reflection
+     */
+    private static int getFramebufferDepthTextureId(Framebuffer framebuffer) {
+        try {
+            // Get depthAttachment field
+            java.lang.reflect.Field depthAttachmentField = Framebuffer.class.getDeclaredField("depthAttachment");
+            depthAttachmentField.setAccessible(true);
+            Object depthAttachment = depthAttachmentField.get(framebuffer);
+
+            if (depthAttachment == null) {
+                System.err.println("[CustomPostProcessing] Depth attachment is null");
+                return -1;
+            }
+
+            // Get the GL ID from the depth attachment (GpuTexture type)
+            java.lang.reflect.Method getGlIdMethod = depthAttachment.getClass().getMethod("getGlId");
+            int depthTextureId = (int) getGlIdMethod.invoke(depthAttachment);
+
+            return depthTextureId;
+        } catch (Exception e) {
+            System.err.println("[CustomPostProcessing] Failed to get depth texture ID: " + e.getMessage());
             return -1;
         }
     }
