@@ -39,7 +39,7 @@ public class GameRendererMixin {
         // Get view matrix (camera transformation)
         org.joml.Matrix4f viewMatrix = new org.joml.Matrix4f();
         viewMatrix.rotationX((float) Math.toRadians(camera.getPitch()));
-        viewMatrix.rotateY((float) Math.toRadians(-camera.getYaw() + 180.0f));
+        viewMatrix.rotateY((float) Math.toRadians(camera.getYaw()+180.0f));
         viewMatrix.translate(
             (float) -camera.getPos().x,
             (float) -camera.getPos().y,
