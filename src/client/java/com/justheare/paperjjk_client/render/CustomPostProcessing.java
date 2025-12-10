@@ -233,18 +233,24 @@ public class CustomPostProcessing {
                 return;
             }
 
-            // Step 2: Get depth texture ID for copying
-            int depthTextureId = getFramebufferDepthTextureId(mainFramebuffer);
+            // Step 2: Get depth texture ID - prioritize Iris depthtex2 (world depth without hand)
+            int depthTextureId = getIrisWorldDepthTexture();
+            if (depthTextureId == -1) {
+                // Fallback to Minecraft's default depth texture
+                System.out.println("[CustomPostProcessing] Step 2: Iris depth unavailable, using Minecraft framebuffer depth");
+                depthTextureId = getFramebufferDepthTextureId(mainFramebuffer);
+            }
+
             if (depthTextureId == -1) {
                 System.err.println("[CustomPostProcessing] Step 2: WARNING - No depth texture available, occlusion disabled");
             } else {
-                // Query the original depth texture format
+                // Query the depth texture format
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, depthTextureId);
                 int originalFormat = GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_INTERNAL_FORMAT);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
 
-                System.out.println("[CustomPostProcessing] Step 2: Depth texture ID: " + depthTextureId + ", Original format: 0x" + Integer.toHexString(originalFormat));
+                System.out.println("[CustomPostProcessing] Step 2: Using depth texture ID: " + depthTextureId + ", Format: 0x" + Integer.toHexString(originalFormat));
             }
 
             // Get the currently bound FBO - this should be Minecraft's rendering FBO
@@ -452,15 +458,15 @@ public class CustomPostProcessing {
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, sourceTexture);
 
-            // Step 3: TEST - Bind ORIGINAL depth texture directly (not copied)
+            // Step 3: Bind Iris depthtex2 (world depth, no hand) directly to GL_TEXTURE5
             if (depthTextureId != -1) {
-                // Use GL_TEXTURE5 instead of GL_TEXTURE1
+                // Use GL_TEXTURE5 to avoid conflicts with Minecraft's texture units
                 GL13.glActiveTexture(GL13.GL_TEXTURE5);
-                // TESTING: Use original depth texture instead of copied one
+                // Bind Iris depthtex2 directly (no copy needed - Iris already provides the correct depth)
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, depthTextureId);
                 // CRITICAL: Restore to unit 0 immediately
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
-                System.out.println("[CustomPostProcessing] Step 3: ORIGINAL depth texture bound to unit 5 (testing)");
+                System.out.println("[CustomPostProcessing] Step 3: Iris depthtex2 (world depth) bound to unit 5");
             }
 
             // Calculate aspect ratio (width / height)
@@ -664,5 +670,69 @@ public class CustomPostProcessing {
             destTexture = -1;
         }
         initialized = false;
+    }
+
+    /**
+     * Get Iris depthtex2 (world depth without hand) if Iris is installed
+     * Returns -1 if Iris is not installed or depthtex2 is not available
+     */
+    private static int getIrisWorldDepthTexture() {
+        try {
+            // Check if Iris is loaded by attempting to access its main class
+            Class<?> irisClass = Class.forName("net.irisshaders.iris.Iris");
+
+            // Get the PipelineManager
+            java.lang.reflect.Method getPipelineManagerMethod = irisClass.getMethod("getPipelineManager");
+            Object pipelineManager = getPipelineManagerMethod.invoke(null);
+
+            // Get the current pipeline (WorldRenderingPipeline)
+            java.lang.reflect.Method getPipelineMethod = pipelineManager.getClass().getMethod("getPipelineNullable");
+            Object pipeline = getPipelineMethod.invoke(pipelineManager);
+
+            if (pipeline == null) {
+                System.out.println("[CustomPostProcessing] Iris: No active pipeline");
+                return -1;
+            }
+
+            // Check if it's an IrisRenderingPipeline (not vanilla)
+            if (!pipeline.getClass().getName().equals("net.irisshaders.iris.pipeline.IrisRenderingPipeline")) {
+                System.out.println("[CustomPostProcessing] Iris: Vanilla pipeline active, no shader depth available");
+                return -1;
+            }
+
+            // Access the renderTargets field (private, need reflection)
+            java.lang.reflect.Field renderTargetsField = pipeline.getClass().getDeclaredField("renderTargets");
+            renderTargetsField.setAccessible(true);
+            Object renderTargets = renderTargetsField.get(pipeline);
+
+            if (renderTargets == null) {
+                System.err.println("[CustomPostProcessing] Iris: renderTargets is null");
+                return -1;
+            }
+
+            // Get depthtex2 (noHand) - world depth without hand rendering
+            java.lang.reflect.Method getDepthNoHandMethod = renderTargets.getClass().getMethod("getDepthTextureNoHand");
+            Object depthTextureNoHand = getDepthNoHandMethod.invoke(renderTargets);
+
+            if (depthTextureNoHand == null) {
+                System.err.println("[CustomPostProcessing] Iris: depthtex2 (noHand) is null");
+                return -1;
+            }
+
+            // Get the OpenGL texture ID via iris$getGlId()
+            java.lang.reflect.Method getGlIdMethod = depthTextureNoHand.getClass().getMethod("iris$getGlId");
+            int textureId = (int) getGlIdMethod.invoke(depthTextureNoHand);
+
+            System.out.println("[CustomPostProcessing] Iris: Successfully accessed depthtex2 (world depth, no hand): " + textureId);
+            return textureId;
+
+        } catch (ClassNotFoundException e) {
+            System.out.println("[CustomPostProcessing] Iris not installed, using fallback depth");
+            return -1;
+        } catch (Exception e) {
+            System.err.println("[CustomPostProcessing] Failed to access Iris depth texture:");
+            e.printStackTrace();
+            return -1;
+        }
     }
 }
