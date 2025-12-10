@@ -218,7 +218,13 @@ public class CustomPostProcessing {
             if (depthTextureId == -1) {
                 System.err.println("[CustomPostProcessing] Step 2: WARNING - No depth texture available, occlusion disabled");
             } else {
-                System.out.println("[CustomPostProcessing] Step 2: Depth texture ID: " + depthTextureId);
+                // Query the original depth texture format
+                GL13.glActiveTexture(GL13.GL_TEXTURE0);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, depthTextureId);
+                int originalFormat = GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_INTERNAL_FORMAT);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+
+                System.out.println("[CustomPostProcessing] Step 2: Depth texture ID: " + depthTextureId + ", Original format: 0x" + Integer.toHexString(originalFormat));
             }
 
             // Get the currently bound FBO - this should be Minecraft's rendering FBO
@@ -285,20 +291,23 @@ public class CustomPostProcessing {
                 GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
 
-                // Step 2: Create copied depth texture (GL_DEPTH_COMPONENT32)
+                // Step 2: Create copied depth texture with GL_DEPTH_COMPONENT32F (0x81a7)
                 // CRITICAL: Must ensure active texture unit is 0 before creating textures
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
                 copiedDepthTexture = GL11.glGenTextures();
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, copiedDepthTexture);
-                GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL14.GL_DEPTH_COMPONENT32,
+                // Use 0x81a7 (GL_DEPTH_COMPONENT32F) - confirmed from runtime query
+                GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, 0x81a7,
                     mainFramebuffer.textureWidth, mainFramebuffer.textureHeight,
                     0, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, (java.nio.ByteBuffer) null);
                 GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
                 GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
                 GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
                 GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+                // CRITICAL: Disable depth comparison mode for shader sampling
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL14.GL_TEXTURE_COMPARE_MODE, GL11.GL_NONE);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
-                System.out.println("[CustomPostProcessing] Step 2: Created copied depth texture");
+                System.out.println("[CustomPostProcessing] Step 2: Created copied depth texture (0x81a7)");
 
                 // Create FBO and attach destination texture
                 tempFbo = GL30.glGenFramebuffers();
@@ -357,7 +366,7 @@ public class CustomPostProcessing {
                 GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, 0);
 
                 // Step 2: Copy depth texture data (if available)
-                if (depthTextureId != -1) {
+                if (depthTextureId != -1 && copiedDepthTexture != -1) {
                     int tempDepthReadFbo = GL30.glGenFramebuffers();
                     int tempDepthWriteFbo = GL30.glGenFramebuffers();
 
@@ -419,9 +428,19 @@ public class CustomPostProcessing {
             GL30.glBindVertexArray(vao);
             GL20.glUseProgram(shaderProgram);
 
-            // Bind the source texture (undistorted frame)
+            // Bind the source texture (undistorted frame) to unit 0
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, sourceTexture);
+
+            // Step 3: Bind copied depth texture to unit 5 (avoiding unit 1 which Minecraft uses)
+            if (depthTextureId != -1 && copiedDepthTexture != -1) {
+                // Use GL_TEXTURE5 instead of GL_TEXTURE1
+                GL13.glActiveTexture(GL13.GL_TEXTURE5);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, copiedDepthTexture);
+                // CRITICAL: Restore to unit 0 immediately
+                GL13.glActiveTexture(GL13.GL_TEXTURE0);
+                System.out.println("[CustomPostProcessing] Step 3: Depth texture bound to unit 5");
+            }
 
             // Calculate aspect ratio (width / height)
             float aspectRatio = (float) tempWidth / (float) tempHeight;
@@ -432,9 +451,21 @@ public class CustomPostProcessing {
             GL20.glUniform1f(uEffectStrength, strength * 6.0f); // 왜곡 강도 3배 증가
             GL20.glUniform1f(uAspectRatio, aspectRatio);
             GL20.glUniform1i(uTexture, 0);
+            // Step 3: Set depth texture uniform to unit 5 (not 1)
+            if (depthTextureId != -1 && copiedDepthTexture != -1) {
+                GL20.glUniform1i(uDepthTexture, 5);
+            }
 
             // Draw distorted quad to destTexture (attached to tempFbo)
             GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
+
+            // CRITICAL: Immediately unbind depth texture from unit 5 BEFORE any other operations
+            if (depthTextureId != -1 && copiedDepthTexture != -1) {
+                GL13.glActiveTexture(GL13.GL_TEXTURE5);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+                GL13.glActiveTexture(GL13.GL_TEXTURE0);
+                System.out.println("[CustomPostProcessing] Step 3: Immediately unbound depth from unit 5 after draw");
+            }
 
             // STEP 4: Copy distorted image back to main framebuffer texture
             if (mainFbo == 0) {
@@ -468,9 +499,17 @@ public class CustomPostProcessing {
                 GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, tempWidth, tempHeight);
             }
 
-            // Restore state - ensure we're on texture unit 0
+            // Restore state - unbind all textures properly
+            // Step 3: Unbind depth texture from unit 5 if it was used (double-check)
+            if (depthTextureId != -1 && copiedDepthTexture != -1) {
+                GL13.glActiveTexture(GL13.GL_TEXTURE5);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+                System.out.println("[CustomPostProcessing] Step 3: Final unbind depth from unit 5");
+            }
+            // Unbind color texture from unit 0 and ensure we're on unit 0
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+
             GL30.glBindVertexArray(0);
             GL20.glUseProgram(0);
             GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, mainFbo);
