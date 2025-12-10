@@ -319,12 +319,17 @@ public class CustomPostProcessing {
                     0, 0, tempWidth, tempHeight,
                     GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
 
-                // Cleanup temp FBOs
+                // Cleanup temp FBOs and restore framebuffer state
                 GL30.glDeleteFramebuffers(tempReadFbo);
                 GL30.glDeleteFramebuffers(tempWriteFbo);
+                // Unbind read/draw framebuffers to clean state
+                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, 0);
+                GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, 0);
             } else {
                 // Normal FBO: use glCopyTexSubImage2D
                 GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, mainFbo);
+                // CRITICAL: Ensure we're on texture unit 0 before binding
+                GL13.glActiveTexture(GL13.GL_TEXTURE0);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, sourceTexture);
                 GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, tempWidth, tempHeight);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
@@ -333,6 +338,10 @@ public class CustomPostProcessing {
             // STEP 3: Render distorted version from sourceTexture to destTexture (via tempFbo)
             GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, tempFbo);
             GL11.glViewport(0, 0, tempWidth, tempHeight);
+
+            // Save GL state
+            boolean depthTestEnabled = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
+            boolean blendEnabled = GL11.glIsEnabled(GL11.GL_BLEND);
 
             GL11.glDisable(GL11.GL_DEPTH_TEST);
             GL11.glDisable(GL11.GL_BLEND);
@@ -374,22 +383,31 @@ public class CustomPostProcessing {
                     0, 0, tempWidth, tempHeight,
                     GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
 
-                // Cleanup
+                // Cleanup and restore framebuffer state
                 GL30.glDeleteFramebuffers(tempWriteFbo);
+                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, 0);
+                GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, 0);
             } else {
                 // Normal FBO: Copy from tempFbo to mainFbo
                 GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, tempFbo);
                 GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, mainFbo);
 
+                // CRITICAL: Ensure we're on texture unit 0 before binding
+                GL13.glActiveTexture(GL13.GL_TEXTURE0);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, mainTextureId);
                 GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, tempWidth, tempHeight);
             }
 
-            // Restore state
+            // Restore state - ensure we're on texture unit 0
+            GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
             GL30.glBindVertexArray(0);
             GL20.glUseProgram(0);
             GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, mainFbo);
+
+            // Restore GL state
+            if (depthTestEnabled) GL11.glEnable(GL11.GL_DEPTH_TEST);
+            if (blendEnabled) GL11.glEnable(GL11.GL_BLEND);
 
         } catch (Exception e) {
             System.err.println("[CustomPostProcessing] Error during render:");
