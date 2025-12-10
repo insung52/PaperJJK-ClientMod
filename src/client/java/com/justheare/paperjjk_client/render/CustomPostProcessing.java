@@ -22,6 +22,7 @@ public class CustomPostProcessing {
     private static int uEffectStrength = -1;
     private static int uTexture = -1;
     private static int uDepthTexture = -1;  // Step 1: Add depth texture uniform location
+    private static int uEffectDepth = -1;   // Step 5: Effect depth uniform for occlusion testing
     private static int uAspectRatio = -1;
 
     // Temporary FBO and textures for post-processing
@@ -77,10 +78,11 @@ public class CustomPostProcessing {
             #version 330 core
 
             uniform sampler2D uTexture;
-            uniform sampler2D uDepthTexture;  // Step 1: Add depth texture uniform (not used yet)
+            uniform sampler2D uDepthTexture;  // Step 1: Add depth texture uniform
             uniform vec2 uEffectCenter;
             uniform float uEffectRadius;
             uniform float uEffectStrength;
+            uniform float uEffectDepth;       // Step 5: Effect depth for occlusion testing
             uniform float uAspectRatio;
 
             in vec2 texCoord;
@@ -203,6 +205,7 @@ public class CustomPostProcessing {
         uEffectCenter = GL20.glGetUniformLocation(shaderProgram, "uEffectCenter");
         uEffectRadius = GL20.glGetUniformLocation(shaderProgram, "uEffectRadius");
         uEffectStrength = GL20.glGetUniformLocation(shaderProgram, "uEffectStrength");
+        uEffectDepth = GL20.glGetUniformLocation(shaderProgram, "uEffectDepth");    // Step 5
         uAspectRatio = GL20.glGetUniformLocation(shaderProgram, "uAspectRatio");
 
     }
@@ -211,7 +214,7 @@ public class CustomPostProcessing {
      * Render post-processing effect
      * Copies framebuffer, applies distortion, and draws back
      */
-    public static void render(float centerX, float centerY, float radius, float strength) {
+    public static void render(float centerX, float centerY, float radius, float strength, float effectDepth) {
         if (!initialized) {
             init();
             if (!initialized) return;
@@ -476,6 +479,7 @@ public class CustomPostProcessing {
             GL20.glUniform2f(uEffectCenter, centerX, centerY);
             GL20.glUniform1f(uEffectRadius, radius*2.0f);
             GL20.glUniform1f(uEffectStrength, strength * 6.0f); // 왜곡 강도 3배 증가
+            GL20.glUniform1f(uEffectDepth, effectDepth);        // Step 5: Pass effect depth
             GL20.glUniform1f(uAspectRatio, aspectRatio);
             GL20.glUniform1i(uTexture, 0);
             // Step 3: Set depth texture uniform to unit 5 (not 1)
