@@ -123,43 +123,29 @@ public class CustomPostProcessing {
                     sampleCoord = clamp(sampleCoord, 0.0, 1.0);
                 }
 
+                // Step 6: Occlusion test - check if effect is behind geometry
+                // Sample depth at current pixel
+                float pixelDepth = texture(uDepthTexture, texCoord).r;
+
+                // If pixel depth < effect depth, geometry is in front (occlusion)
+                // Small epsilon for depth comparison to avoid precision issues
+                if (pixelDepth < uEffectDepth - 0.0001) {
+                    // Effect is occluded, skip distortion and bloom
+                    fragColor = texture(uTexture, texCoord);
+                    return;
+                }
+
                 // Sample the texture at the (possibly distorted) coordinates
                 // Note: sampleCoord is already in flipped OpenGL space, so we can use it directly
                 vec4 color = texture(uTexture, sampleCoord);
 
-                // Step 4: DEBUG - Visualize depth with multiple tests
-                if (dist < uEffectRadius) {
-                    // Sample depth texture
-                    vec4 depthSample = texture(uDepthTexture, texCoord);
-                    float depthValue = depthSample.r;
-
-                    // TEST 1: Show raw depth value as grayscale
-                    color.rgb = vec3(depthValue);
-
-                    // TEST 2: If depth is exactly 1.0 everywhere, show RED
-                    if (depthValue > 0.999) {
-                        color.rgb = vec3(1.0, 0.0, 0.0);  // RED = depth is 1.0 (problem!)
-                    }
-
-                    // TEST 3: If depth is exactly 0.0 everywhere, show BLUE
-                    if (depthValue < 0.001) {
-                        color.rgb = vec3(0.0, 0.0, 1.0);  // BLUE = depth is 0.0 (problem!)
-                    }
-
-                    // TEST 4: Show all 4 channels to debug
-                    // Uncomment to see R,G,B,A channels:
-                    // color.rgb = vec3(depthSample.r, depthSample.g, depthSample.b);
-                }
-
-                // Blue bloom disabled for now to see depth clearly
-                /*
+                // Blue bloom effect
                 if (dist < uEffectRadius) {
                     float normalizedDist = dist / uEffectRadius;
                     vec3 bloomColor = vec3(0.2, 0.6, 1.0);
                     float bloomFactor = exp(-normalizedDist * 4.0) * 5.0;
                     color.rgb += bloomColor * bloomFactor;
                 }
-                */
 
                 fragColor = color;
             }
