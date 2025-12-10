@@ -51,7 +51,7 @@ public class CustomPostProcessing {
 
             initialized = true;
         } catch (Exception e) {
-            System.err.println("[CustomPostProcessing] Failed to initialize:");
+            // System.err.println("[CustomPostProcessing] Failed to initialize:");
             e.printStackTrace();
         }
     }
@@ -157,7 +157,7 @@ public class CustomPostProcessing {
         GL20.glCompileShader(vertexShader);
 
         if (GL20.glGetShaderi(vertexShader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
-            System.err.println("[CustomPostProcessing] Vertex shader compilation failed:");
+            // System.err.println("[CustomPostProcessing] Vertex shader compilation failed:");
             System.err.println(GL20.glGetShaderInfoLog(vertexShader));
             return;
         }
@@ -168,7 +168,7 @@ public class CustomPostProcessing {
         GL20.glCompileShader(fragmentShader);
 
         if (GL20.glGetShaderi(fragmentShader, GL20.GL_COMPILE_STATUS) == GL11.GL_FALSE) {
-            System.err.println("[CustomPostProcessing] Fragment shader compilation failed:");
+            // System.err.println("[CustomPostProcessing] Fragment shader compilation failed:");
             System.err.println(GL20.glGetShaderInfoLog(fragmentShader));
             return;
         }
@@ -180,7 +180,7 @@ public class CustomPostProcessing {
         GL20.glLinkProgram(shaderProgram);
 
         if (GL20.glGetProgrami(shaderProgram, GL20.GL_LINK_STATUS) == GL11.GL_FALSE) {
-            System.err.println("[CustomPostProcessing] Shader program linking failed:");
+            // System.err.println("[CustomPostProcessing] Shader program linking failed:");
             System.err.println(GL20.glGetProgramInfoLog(shaderProgram));
             return;
         }
@@ -218,7 +218,7 @@ public class CustomPostProcessing {
             // First, try to get the color texture's GL ID
             int mainTextureId = getFramebufferTextureId(mainFramebuffer);
             if (mainTextureId == -1) {
-                System.err.println("[CustomPostProcessing] Failed to get main framebuffer texture ID");
+                // System.err.println("[CustomPostProcessing] Failed to get main framebuffer texture ID");
                 return;
             }
 
@@ -226,12 +226,12 @@ public class CustomPostProcessing {
             int depthTextureId = getIrisWorldDepthTexture();
             if (depthTextureId == -1) {
                 // Fallback to Minecraft's default depth texture
-                System.out.println("[CustomPostProcessing] Step 2: Iris depth unavailable, using Minecraft framebuffer depth");
+                // System.out.println("[CustomPostProcessing] Step 2: Iris depth unavailable, using Minecraft framebuffer depth");
                 depthTextureId = getFramebufferDepthTextureId(mainFramebuffer);
             }
 
             if (depthTextureId == -1) {
-                System.err.println("[CustomPostProcessing] Step 2: WARNING - No depth texture available, occlusion disabled");
+                // System.err.println("[CustomPostProcessing] Step 2: WARNING - No depth texture available, occlusion disabled");
             } else {
                 // Query the depth texture format
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
@@ -239,7 +239,7 @@ public class CustomPostProcessing {
                 int originalFormat = GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_INTERNAL_FORMAT);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
 
-                System.out.println("[CustomPostProcessing] Step 2: Using depth texture ID: " + depthTextureId + ", Format: 0x" + Integer.toHexString(originalFormat));
+                // System.out.println("[CustomPostProcessing] Step 2: Using depth texture ID: " + depthTextureId + ", Format: 0x" + Integer.toHexString(originalFormat));
             }
 
             // Get the currently bound FBO - this should be Minecraft's rendering FBO
@@ -253,14 +253,14 @@ public class CustomPostProcessing {
 
                 // Query which FBO this texture is attached to (this is hacky but might work)
                 // Actually, we can't query this directly. Let's create our own FBO for the main texture
-                //System.out.println("[CustomPostProcessing] Current FBO is 0, creating wrapper FBO for main texture");
+                //// System.out.println("[CustomPostProcessing] Current FBO is 0, creating wrapper FBO for main texture");
 
                 // We'll use a different strategy: don't copy FROM mainFbo, just render to it
                 currentFbo = 0; // Keep as 0, we'll handle this specially
             }
 
             int mainFbo = currentFbo;
-            /*System.out.println("[CustomPostProcessing] Current FBO binding: " + mainFbo +
+            /*// System.out.println("[CustomPostProcessing] Current FBO binding: " + mainFbo +
                 ", Main texture ID: " + mainTextureId +
                 " (size: " + mainFramebuffer.textureWidth + "x" + mainFramebuffer.textureHeight + ")");*/
 
@@ -322,7 +322,7 @@ public class CustomPostProcessing {
                 // CRITICAL: Disable depth comparison mode for shader sampling
                 GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL14.GL_TEXTURE_COMPARE_MODE, GL11.GL_NONE);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
-                System.out.println("[CustomPostProcessing] Step 2: Created copied depth texture (0x81a7)");
+                // System.out.println("[CustomPostProcessing] Step 2: Created copied depth texture (0x81a7)");
 
                 // Create FBO and attach destination texture
                 tempFbo = GL30.glGenFramebuffers();
@@ -332,7 +332,7 @@ public class CustomPostProcessing {
 
                 int status = GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER);
                 if (status != GL30.GL_FRAMEBUFFER_COMPLETE) {
-                    System.err.println("[CustomPostProcessing] Framebuffer incomplete: " + status);
+                    // System.err.println("[CustomPostProcessing] Framebuffer incomplete: " + status);
                     GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, savedFbo);
                     return;
                 }
@@ -347,7 +347,7 @@ public class CustomPostProcessing {
 
             // CRITICAL: If tempFbo and mainFbo are the same, we can't proceed!
             if (tempFbo == mainFbo && mainFbo != 0) {
-                System.err.println("[CustomPostProcessing] ERROR: tempFbo == mainFbo (" + tempFbo + "), cannot render to same framebuffer!");
+                // System.err.println("[CustomPostProcessing] ERROR: tempFbo == mainFbo (" + tempFbo + "), cannot render to same framebuffer!");
                 return;
             }
 
@@ -405,12 +405,12 @@ public class CustomPostProcessing {
                             GL30.glBlitFramebuffer(0, 0, tempWidth, tempHeight,
                                 0, 0, tempWidth, tempHeight,
                                 GL11.GL_DEPTH_BUFFER_BIT, GL11.GL_NEAREST);
-                            System.out.println("[CustomPostProcessing] Step 2: Depth data copied successfully");
+                            // System.out.println("[CustomPostProcessing] Step 2: Depth data copied successfully");
                         } else {
-                            System.err.println("[CustomPostProcessing] Step 2: Write FBO incomplete: " + writeStatus);
+                            // System.err.println("[CustomPostProcessing] Step 2: Write FBO incomplete: " + writeStatus);
                         }
                     } else {
-                        System.err.println("[CustomPostProcessing] Step 2: Read FBO incomplete: " + readStatus);
+                        // System.err.println("[CustomPostProcessing] Step 2: Read FBO incomplete: " + readStatus);
                     }
 
                     // Cleanup and restore state
@@ -455,7 +455,7 @@ public class CustomPostProcessing {
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, depthTextureId);
                 // CRITICAL: Restore to unit 0 immediately
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
-                System.out.println("[CustomPostProcessing] Step 3: Iris depthtex2 (world depth) bound to unit 5");
+                // System.out.println("[CustomPostProcessing] Step 3: Iris depthtex2 (world depth) bound to unit 5");
             }
 
             // Calculate aspect ratio (width / height)
@@ -481,7 +481,7 @@ public class CustomPostProcessing {
                 GL13.glActiveTexture(GL13.GL_TEXTURE5);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
                 GL13.glActiveTexture(GL13.GL_TEXTURE0);
-                System.out.println("[CustomPostProcessing] Step 3: Immediately unbound depth from unit 5 after draw");
+                // System.out.println("[CustomPostProcessing] Step 3: Immediately unbound depth from unit 5 after draw");
             }
 
             // STEP 4: Copy distorted image back to main framebuffer texture
@@ -521,7 +521,7 @@ public class CustomPostProcessing {
             if (depthTextureId != -1) {
                 GL13.glActiveTexture(GL13.GL_TEXTURE5);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
-                System.out.println("[CustomPostProcessing] Step 3: Final unbind depth from unit 5");
+                // System.out.println("[CustomPostProcessing] Step 3: Final unbind depth from unit 5");
             }
             // Unbind color texture from unit 0 and ensure we're on unit 0
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
@@ -536,7 +536,7 @@ public class CustomPostProcessing {
             if (blendEnabled) GL11.glEnable(GL11.GL_BLEND);
 
         } catch (Exception e) {
-            System.err.println("[CustomPostProcessing] Error during render:");
+            //System.err.println("[CustomPostProcessing] Error during render:");
             e.printStackTrace();
         }
     }
@@ -547,7 +547,7 @@ public class CustomPostProcessing {
     private static int getFramebufferFboId(Framebuffer framebuffer) {
         try {
             // Debug: Print all fields to find the correct one
-            System.out.println("[CustomPostProcessing] Framebuffer fields:");
+            // System.out.println("[CustomPostProcessing] Framebuffer fields:");
             for (java.lang.reflect.Field field : Framebuffer.class.getDeclaredFields()) {
                 System.out.println("  - " + field.getName() + " (" + field.getType().getSimpleName() + ")");
             }
@@ -563,7 +563,7 @@ public class CustomPostProcessing {
                     // If it's an int, return it directly
                     if (value instanceof Integer) {
                         int id = (int) value;
-                        System.out.println("[CustomPostProcessing] Found FBO ID in field '" + fieldName + "': " + id);
+                        // System.out.println("[CustomPostProcessing] Found FBO ID in field '" + fieldName + "': " + id);
                         return id;
                     }
 
@@ -571,16 +571,16 @@ public class CustomPostProcessing {
                     try {
                         java.lang.reflect.Method getGlIdMethod = value.getClass().getMethod("getGlId");
                         int id = (int) getGlIdMethod.invoke(value);
-                        System.out.println("[CustomPostProcessing] Found FBO ID via " + fieldName + ".getGlId(): " + id);
+                        // System.out.println("[CustomPostProcessing] Found FBO ID via " + fieldName + ".getGlId(): " + id);
                         return id;
                     } catch (Exception ignored) {}
                 } catch (NoSuchFieldException ignored) {}
             }
 
-            System.err.println("[CustomPostProcessing] Could not find FBO ID in any known field");
+            // System.err.println("[CustomPostProcessing] Could not find FBO ID in any known field");
             return -1;
         } catch (Exception e) {
-            System.err.println("[CustomPostProcessing] Failed to get FBO ID: " + e.getMessage());
+            // System.err.println("[CustomPostProcessing] Failed to get FBO ID: " + e.getMessage());
             e.printStackTrace();
             return -1;
         }
@@ -597,7 +597,7 @@ public class CustomPostProcessing {
             Object depthAttachment = depthAttachmentField.get(framebuffer);
 
             if (depthAttachment == null) {
-                System.err.println("[CustomPostProcessing] Depth attachment is null");
+                // System.err.println("[CustomPostProcessing] Depth attachment is null");
                 return -1;
             }
 
@@ -607,7 +607,7 @@ public class CustomPostProcessing {
 
             return depthTextureId;
         } catch (Exception e) {
-            System.err.println("[CustomPostProcessing] Failed to get depth texture ID: " + e.getMessage());
+            // System.err.println("[CustomPostProcessing] Failed to get depth texture ID: " + e.getMessage());
             return -1;
         }
     }
@@ -626,7 +626,7 @@ public class CustomPostProcessing {
             java.lang.reflect.Method getGlIdMethod = colorAttachment.getClass().getMethod("getGlId");
             return (int) getGlIdMethod.invoke(colorAttachment);
         } catch (Exception e) {
-            System.err.println("[CustomPostProcessing] Failed to get texture ID: " + e.getMessage());
+            // System.err.println("[CustomPostProcessing] Failed to get texture ID: " + e.getMessage());
             return -1;
         }
     }
@@ -680,13 +680,13 @@ public class CustomPostProcessing {
             Object pipeline = getPipelineMethod.invoke(pipelineManager);
 
             if (pipeline == null) {
-                System.out.println("[CustomPostProcessing] Iris: No active pipeline");
+                // System.out.println("[CustomPostProcessing] Iris: No active pipeline");
                 return -1;
             }
 
             // Check if it's an IrisRenderingPipeline (not vanilla)
             if (!pipeline.getClass().getName().equals("net.irisshaders.iris.pipeline.IrisRenderingPipeline")) {
-                System.out.println("[CustomPostProcessing] Iris: Vanilla pipeline active, no shader depth available");
+                // System.out.println("[CustomPostProcessing] Iris: Vanilla pipeline active, no shader depth available");
                 return -1;
             }
 
@@ -696,7 +696,7 @@ public class CustomPostProcessing {
             Object renderTargets = renderTargetsField.get(pipeline);
 
             if (renderTargets == null) {
-                System.err.println("[CustomPostProcessing] Iris: renderTargets is null");
+                // System.err.println("[CustomPostProcessing] Iris: renderTargets is null");
                 return -1;
             }
 
@@ -705,7 +705,7 @@ public class CustomPostProcessing {
             Object depthTextureNoHand = getDepthNoHandMethod.invoke(renderTargets);
 
             if (depthTextureNoHand == null) {
-                System.err.println("[CustomPostProcessing] Iris: depthtex2 (noHand) is null");
+                // System.err.println("[CustomPostProcessing] Iris: depthtex2 (noHand) is null");
                 return -1;
             }
 
@@ -713,14 +713,14 @@ public class CustomPostProcessing {
             java.lang.reflect.Method getGlIdMethod = depthTextureNoHand.getClass().getMethod("iris$getGlId");
             int textureId = (int) getGlIdMethod.invoke(depthTextureNoHand);
 
-            System.out.println("[CustomPostProcessing] Iris: Successfully accessed depthtex2 (world depth, no hand): " + textureId);
+            // System.out.println("[CustomPostProcessing] Iris: Successfully accessed depthtex2 (world depth, no hand): " + textureId);
             return textureId;
 
         } catch (ClassNotFoundException e) {
-            System.out.println("[CustomPostProcessing] Iris not installed, using fallback depth");
+            // System.out.println("[CustomPostProcessing] Iris not installed, using fallback depth");
             return -1;
         } catch (Exception e) {
-            System.err.println("[CustomPostProcessing] Failed to access Iris depth texture:");
+            // System.err.println("[CustomPostProcessing] Failed to access Iris depth texture:");
             e.printStackTrace();
             return -1;
         }
