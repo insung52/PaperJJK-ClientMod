@@ -1,0 +1,1 @@
+    public static final byte INFINITY_AO = 0x17;            // Infinity Ao (refraction effect sync)

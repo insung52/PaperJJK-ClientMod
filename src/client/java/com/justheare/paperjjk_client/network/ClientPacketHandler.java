@@ -49,6 +49,7 @@ public class ClientPacketHandler {
                         case PacketIds.PARTICLE_EFFECT -> handleParticleEffect(context.client(), buf);
                         case PacketIds.SCREEN_EFFECT -> handleScreenEffect(context.client(), buf);
                         case PacketIds.DOMAIN_SETTINGS_RESPONSE -> handleDomainSettingsResponse(context.client(), buf);
+                        case PacketIds.INFINITY_AO -> handleInfinityAo(context.client(), buf);
                         case PacketIds.HANDSHAKE -> handleHandshake(context.client(), buf);
                         default -> LOGGER.warn("Unknown packet ID: 0x{}", String.format("%02X", packetId));
                     }
@@ -238,6 +239,56 @@ public class ClientPacketHandler {
                 LOGGER.info("Updated domain settings screen with server values");
             }
         });
+    }
+
+    /**
+     * INFINITY_AO (0x17) - Infinity Ao refraction effect sync
+     * Handles START/SYNC/END actions for server-side Infinity Ao
+     */
+    private static void handleInfinityAo(MinecraftClient client, PacketByteBuf buf) {
+        byte action = buf.readByte();
+
+        switch (action) {
+            case PacketIds.InfinityAoAction.START -> {
+                double x = buf.readDouble();
+                double y = buf.readDouble();
+                double z = buf.readDouble();
+                float strength = buf.readFloat();
+
+                client.execute(() -> {
+                    net.minecraft.util.math.Vec3d position = new net.minecraft.util.math.Vec3d(x, y, z);
+                    com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(
+                        position,
+                        0.3f,  // Fixed radius
+                        strength
+                    );
+                    LOGGER.info("[Infinity Ao] START: pos=({},{},{}), strength={}",
+                        x, y, z, strength);
+                });
+            }
+
+            case PacketIds.InfinityAoAction.SYNC -> {
+                double x = buf.readDouble();
+                double y = buf.readDouble();
+                double z = buf.readDouble();
+                float strength = buf.readFloat();
+
+                client.execute(() -> {
+                    // TODO: Update existing effect with interpolation
+                    LOGGER.debug("[Infinity Ao] SYNC: pos=({},{},{}), strength={}",
+                        x, y, z, strength);
+                });
+            }
+
+            case PacketIds.InfinityAoAction.END -> {
+                client.execute(() -> {
+                    com.justheare.paperjjk_client.shader.RefractionEffectManager.clearEffects();
+                    LOGGER.info("[Infinity Ao] END");
+                });
+            }
+
+            default -> LOGGER.warn("[Infinity Ao] Unknown action: 0x{}", String.format("%02X", action));
+        }
     }
 
     /**

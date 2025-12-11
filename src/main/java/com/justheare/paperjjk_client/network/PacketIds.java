@@ -25,6 +25,7 @@ public class PacketIds {
     public static final byte TECHNIQUE_COOLDOWN = 0x13;     // Cooldown notification
     public static final byte PARTICLE_EFFECT = 0x14;        // Particle effects
     public static final byte SCREEN_EFFECT = 0x15;          // Screen effects
+    public static final byte INFINITY_AO = 0x17;            // Infinity Ao (refraction effect sync)
 
     // Bidirectional
     public static final byte HANDSHAKE = 0x20;
@@ -112,5 +113,14 @@ public class PacketIds {
         public static final byte DOMAIN_ENTER = 0x02;      // Domain entry animation
         public static final byte DAMAGE_VIGNETTE = 0x03;   // Damage vignetting
         public static final byte CE_DEPLETION = 0x04;      // CE depletion (grayscale)
+    }
+
+    /**
+     * Infinity Ao Action Type (action field in INFINITY_AO packet)
+     */
+    public static class InfinityAoAction {
+        public static final byte START = 0x01;       // Start Ao (spawn refraction effect)
+        public static final byte SYNC = 0x02;        // Sync position & strength (every 500ms)
+        public static final byte END = 0x03;         // End Ao (remove effect)
     }
 }
