@@ -55,9 +55,18 @@ public class GameRendererMixin {
 
             if (screenPos != null) {
                 float distance = (float) screenPos.z;
-                float baseRadius = effect.radius;
-                float scaledRadius = baseRadius / Math.max(1.0f, distance / 10.0f);
-                float finalStrength = effect.strength * 0.1f;
+
+                // Single variable control: effect.strength controls EVERYTHING
+                // Base values (when strength = 1.0)
+                float baseRadius = 0.2f;  // Base radius in screen space
+                float baseDistortionStrength = 0.3f;  // Base distortion strength
+
+                // Scale by strength (linear scaling)
+                float effectiveRadius = baseRadius * effect.strength;
+                float effectiveDistortion = baseDistortionStrength * effect.strength;
+
+                // Apply distance-based scaling to radius only
+                float scaledRadius = effectiveRadius / Math.max(1.0f, distance / 10.0f);
 
                 // Calculate effect depth in [0, 1] range for occlusion testing
                 float effectDepth = calculateDepth(effect.worldPos, viewMatrix, projectionMatrix);
@@ -65,16 +74,18 @@ public class GameRendererMixin {
                 /*.out.println("[GameRendererMixin] Applying distortion: center=(" +
                     String.format("%.3f", screenPos.x) + "," + String.format("%.3f", screenPos.y) +
                     ") radius=" + String.format("%.3f", scaledRadius) +
-                    " strength=" + String.format("%.3f", finalStrength) +
+                    " strength=" + String.format("%.3f", effectiveDistortion) +
                     " depth=" + String.format("%.3f", effectDepth));*/
 
                 // Apply custom post-processing with depth
+                // Pass raw strength for bloom intensity control in shader
                 com.justheare.paperjjk_client.render.CustomPostProcessing.render(
                     (float) screenPos.x,
                     (float) screenPos.y,
                     scaledRadius,
-                    finalStrength,
-                    effectDepth
+                    effectiveDistortion,
+                    effectDepth,
+                    effect.strength  // Pass original strength for bloom scaling
                 );
             }
         }

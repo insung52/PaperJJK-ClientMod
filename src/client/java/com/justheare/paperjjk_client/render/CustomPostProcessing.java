@@ -22,7 +22,8 @@ public class CustomPostProcessing {
     private static int uEffectStrength = -1;
     private static int uTexture = -1;
     private static int uDepthTexture = -1;  // Step 1: Add depth texture uniform location
-    private static int uEffectDepth = -1;   // Step 5: Effect depth uniform for occlusion testing
+    private static int uEffectDepth = -1;   // Step 5: Effect depth uniform for occlusion testing    private static int uAspectRatio = -1;
+    private static int uTime = -1;          // Bloom: Time for spiral animation
     private static int uAspectRatio = -1;
 
     // Temporary FBO and textures for post-processing
@@ -83,6 +84,7 @@ public class CustomPostProcessing {
             uniform float uEffectRadius;
             uniform float uEffectStrength;
             uniform float uEffectDepth;       // Step 5: Effect depth for occlusion testing
+            uniform float uTime;
             uniform float uAspectRatio;
 
             in vec2 texCoord;
@@ -140,11 +142,31 @@ public class CustomPostProcessing {
                 vec4 color = texture(uTexture, sampleCoord);
 
                 // Blue bloom effect
-                if (dist < uEffectRadius) {
-                    float normalizedDist = dist / uEffectRadius;
-                    vec3 bloomColor = vec3(0.2, 0.6, 1.0);
-                    float bloomFactor = exp(-normalizedDist * 4.0) * 5.0;
-                    color.rgb += bloomColor * bloomFactor;
+                // Enhanced bloom: Soft Edge + Spiral + Noise
+                if (dist < uEffectRadius * 1.2) {  // 1.2x for soft edge fade
+                  float normalizedDist = dist / uEffectRadius;
+                
+                  // A: Soft Edge - smooth fade at boundary
+                  float edgeFade = 1.0 - smoothstep(0.8, 1.2, normalizedDist);
+                
+                  // Base bloom intensity
+                  float bloomFactor = exp(-normalizedDist * 4.0) * 5.0;
+                
+                  // E: Spiral effect - rotating vortex pattern
+                  float angle = atan(toCenter.y, toCenter.x);
+                  float spiral = sin(angle * 6.0 + dist * 10.0 - uTime * 3.0) * 0.5 + 0.5;
+                  bloomFactor *= (0.7 + spiral * 0.3);
+                
+                  // F: Procedural noise - energy flickering
+                  float noise = fract(sin(dot(texCoord * 100.0, vec2(12.9898, 78.233))) * 43758.5453);
+                  bloomFactor *= (0.8 + noise * 0.2);
+                
+                  // Apply soft edge fade
+                  bloomFactor *= edgeFade;
+                
+                  // Blue bloom color
+                  vec3 bloomColor = vec3(0.2, 0.6, 1.0);
+                  color.rgb += bloomColor * bloomFactor;
                 }
 
                 fragColor = color;
@@ -192,6 +214,7 @@ public class CustomPostProcessing {
         uEffectRadius = GL20.glGetUniformLocation(shaderProgram, "uEffectRadius");
         uEffectStrength = GL20.glGetUniformLocation(shaderProgram, "uEffectStrength");
         uEffectDepth = GL20.glGetUniformLocation(shaderProgram, "uEffectDepth");    // Step 5
+        uTime = GL20.glGetUniformLocation(shaderProgram, "uTime");
         uAspectRatio = GL20.glGetUniformLocation(shaderProgram, "uAspectRatio");
 
     }
@@ -463,9 +486,10 @@ public class CustomPostProcessing {
 
             // Set uniforms for distortion
             GL20.glUniform2f(uEffectCenter, centerX, centerY);
-            GL20.glUniform1f(uEffectRadius, radius*2.0f);
-            GL20.glUniform1f(uEffectStrength, strength * 6.0f); // 왜곡 강도 3배 증가
+            GL20.glUniform1f(uEffectRadius, radius);
+            GL20.glUniform1f(uEffectStrength, strength * 3.0f); // 왜곡 강도 3배 증가
             GL20.glUniform1f(uEffectDepth, effectDepth);        // Step 5: Pass effect depth
+            GL20.glUniform1f(uTime, (float)(System.currentTimeMillis() % 10000) / 1000.0f);
             GL20.glUniform1f(uAspectRatio, aspectRatio);
             GL20.glUniform1i(uTexture, 0);
             // Step 3: Set depth texture uniform to unit 5 (not 1)
