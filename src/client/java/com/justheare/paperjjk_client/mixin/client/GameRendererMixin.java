@@ -58,15 +58,8 @@ public class GameRendererMixin {
 
                 // Single variable control: effect.strength controls EVERYTHING
                 // Base values (when strength = 1.0)
-                float baseRadius = 0.2f;  // Base radius in screen space
-                float baseDistortionStrength = 0.3f;  // Base distortion strength
-
-                // Scale by strength (linear scaling)
-                float effectiveRadius = baseRadius * effect.strength;
-                float effectiveDistortion = baseDistortionStrength * effect.strength;
-
-                // Apply distance-based scaling to radius only
-                float scaledRadius = effectiveRadius / Math.max(1.0f, distance / 10.0f);
+                float baseRadius = 0.2f;
+                float scaledRadius = baseRadius / Math.max(1.0f, distance / 10.0f);
 
                 // Calculate effect depth in [0, 1] range for occlusion testing
                 float effectDepth = calculateDepth(effect.worldPos, viewMatrix, projectionMatrix);
@@ -83,9 +76,8 @@ public class GameRendererMixin {
                     (float) screenPos.x,
                     (float) screenPos.y,
                     scaledRadius,
-                    effectiveDistortion,
-                    effectDepth,
-                    effect.strength  // Pass original strength for bloom scaling
+                    effect.strength,
+                    effectDepth
                 );
             }
         }

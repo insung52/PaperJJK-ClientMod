@@ -101,28 +101,31 @@ public class CustomPostProcessing {
                 // Calculate vector from current pixel to effect center (with aspect ratio correction)
                 vec2 toCenter = aspectCorrectedTexCoord - aspectCorrectedCenter;
                 float dist = length(toCenter);
+                
+                // STEP 1: Calculate effective radius (한 번만 선언!)
+                float effectRadius = uEffectRadius * uEffectStrength;
 
                 // Default: sample from current position (no distortion)
                 vec2 sampleCoord = texCoord;
 
-                // Apply gravitational lens distortion if within radius
-                if (dist < uEffectRadius && dist > 0.0001) {
-                    // Normalize distance (0.0 at center, 1.0 at edge)
-                    float normalizedDist = dist / uEffectRadius;
-
-                    // Smooth falloff from center to edge
-                    float falloff = 1.0 - smoothstep(0.0, 1.0, normalizedDist);
-
-                    // Calculate distortion amount (stronger at center, weaker at edge)
-                    // Gravitational lensing pulls pixels TOWARD the center
-                    float distortAmount = uEffectStrength * falloff / dist;
-
-                    // Apply distortion: move sample point toward center
-                    // This creates the "magnifying" effect of gravitational lensing
-                    sampleCoord = texCoord + toCenter * distortAmount;
-
-                    // Clamp to valid texture coordinates
-                    sampleCoord = clamp(sampleCoord, 0.0, 1.0);
+                if (dist < effectRadius && dist > 0.0001) {
+                   // Normalize distance (0.0 at center, 1.0 at edge)
+                   float normalizedDist = dist / effectRadius;
+                
+                   // Smooth falloff from center to edge
+                   float falloff = 1.0 - smoothstep(0.0, 1.0, normalizedDist);
+                
+                   // Calculate distortion amount (stronger at center, weaker at edge)
+                   // Gravitational lensing pulls pixels TOWARD the center
+                   // Base multiplier: 0.3
+                   float distortAmount = uEffectStrength * 0.05 * falloff / dist;
+                
+                   // Apply distortion: move sample point toward center
+                   // This creates the "magnifying" effect of gravitational lensing
+                   sampleCoord = texCoord + toCenter * distortAmount;
+                
+                   // Clamp to valid texture coordinates
+                   sampleCoord = clamp(sampleCoord, 0.0, 1.0);
                 }
 
                 // Step 6: Occlusion test - check if effect is behind geometry
@@ -143,30 +146,30 @@ public class CustomPostProcessing {
 
                 // Blue bloom effect
                 // Enhanced bloom: Soft Edge + Spiral + Noise
-                if (dist < uEffectRadius * 1.2) {  // 1.2x for soft edge fade
-                  float normalizedDist = dist / uEffectRadius;
-                
-                  // A: Soft Edge - smooth fade at boundary
-                  float edgeFade = 1.0 - smoothstep(0.8, 1.2, normalizedDist);
-                
-                  // Base bloom intensity
-                  float bloomFactor = exp(-normalizedDist * 4.0) * 5.0;
-                
-                  // E: Spiral effect - rotating vortex pattern
-                  float angle = atan(toCenter.y, toCenter.x);
-                  float spiral = sin(angle * 6.0 + dist * 10.0 - uTime * 3.0) * 0.5 + 0.5;
-                  bloomFactor *= (0.7 + spiral * 0.3);
-                
-                  // F: Procedural noise - energy flickering
-                  float noise = fract(sin(dot(texCoord * 100.0, vec2(12.9898, 78.233))) * 43758.5453);
-                  bloomFactor *= (0.8 + noise * 0.2);
-                
-                  // Apply soft edge fade
-                  bloomFactor *= edgeFade;
-                
-                  // Blue bloom color
-                  vec3 bloomColor = vec3(0.2, 0.6, 1.0);
-                  color.rgb += bloomColor * bloomFactor;
+                if (dist < effectRadius * 1.2) {  // 1.2x for soft edge fade
+                    float normalizedDist = dist / effectRadius;
+                    
+                    // A: Soft Edge - smooth fade at boundary
+                    float edgeFade = 1.0 - smoothstep(0.8, 1.2, normalizedDist);
+                    
+                    // Base bloom intensity scaled by strength
+                    float bloomFactor = exp(-normalizedDist * 4.0) * 5.0 * uEffectStrength;
+                    
+                    // E: Spiral effect - rotating vortex pattern
+                    float angle = atan(toCenter.y, toCenter.x);
+                    float spiral = sin(angle * 6.0 + dist * 10.0 - uTime * 3.0) * 0.5 + 0.5;
+                    bloomFactor *= (0.7 + spiral * 0.3);
+                    
+                    // F: Procedural noise - animated flickering
+                    float noise = fract(sin(dot(texCoord * 100.0 + uTime * 0.5, vec2(12.9898, 78.233))) * 43758.5453);
+                    bloomFactor *= (0.8 + noise * 0.8);
+                    
+                    // Apply soft edge fade
+                    bloomFactor *= edgeFade;
+                    
+                    // Blue bloom color
+                    vec3 bloomColor = vec3(0.2, 0.6, 1.0);
+                    color.rgb += bloomColor * bloomFactor;
                 }
 
                 fragColor = color;
@@ -487,7 +490,7 @@ public class CustomPostProcessing {
             // Set uniforms for distortion
             GL20.glUniform2f(uEffectCenter, centerX, centerY);
             GL20.glUniform1f(uEffectRadius, radius);
-            GL20.glUniform1f(uEffectStrength, strength * 3.0f); // 왜곡 강도 3배 증가
+            GL20.glUniform1f(uEffectStrength, strength); // 왜곡 강도 3배 증가
             GL20.glUniform1f(uEffectDepth, effectDepth);        // Step 5: Pass effect depth
             GL20.glUniform1f(uTime, (float)(System.currentTimeMillis() % 10000) / 1000.0f);
             GL20.glUniform1f(uAspectRatio, aspectRatio);
