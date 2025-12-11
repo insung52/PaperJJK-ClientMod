@@ -59,9 +59,15 @@ public class GameRendererMixin {
             if (screenPos != null) {
                 float distance = (float) screenPos.z;
 
-                // Single variable control: effect.strength controls EVERYTHING
-                // Base values (when strength = 1.0)
-                float baseRadius = 0.2f;
+                // Calculate radius - use effect.radius for MURASAKI_EXPLODE, otherwise use fixed base
+                float baseRadius;
+                if ("MURASAKI_EXPLODE".equals(effect.effectType)) {
+                    // For unlimit_m explosion, use the expanding radius from server
+                    baseRadius = effect.radius / 50.0f;  // Scale down for screen space (50 blocks = 1.0 screen radius)
+                } else {
+                    // For normal effects (AO, AKA, MURASAKI), use fixed base
+                    baseRadius = 0.2f;
+                }
                 float scaledRadius = baseRadius / Math.max(1.0f, distance / 10.0f);
 
                 // Calculate effect depth in [0, 1] range for occlusion testing
