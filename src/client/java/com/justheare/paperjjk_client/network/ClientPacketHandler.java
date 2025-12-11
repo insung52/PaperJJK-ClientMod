@@ -261,7 +261,8 @@ public class ClientPacketHandler {
                     com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(
                         position,
                         0.3f,  // Fixed radius
-                        strength
+                        strength,
+                        "AO"   // Effect type
                     );
                     LOGGER.info("[Infinity Ao] START: pos=({},{},{}), strength={}",
                         x, y, z, strength);
@@ -279,7 +280,8 @@ public class ClientPacketHandler {
                     com.justheare.paperjjk_client.shader.RefractionEffectManager.updateEffect(
                         position,
                         0.3f,  // Fixed radius
-                        strength
+                        strength,
+                        "AO"   // Effect type
                     );
                     LOGGER.debug("[Infinity Ao] SYNC: pos=({},{},{}), strength={}",
                         x, y, z, strength);
@@ -288,7 +290,7 @@ public class ClientPacketHandler {
 
             case PacketIds.InfinityAoAction.END -> {
                 client.execute(() -> {
-                    com.justheare.paperjjk_client.shader.RefractionEffectManager.clearEffects();
+                    com.justheare.paperjjk_client.shader.RefractionEffectManager.clearEffectsByType("AO");
                     LOGGER.info("[Infinity Ao] END");
                 });
             }
@@ -318,7 +320,8 @@ public class ClientPacketHandler {
                     com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(
                         position,
                         0.3f,  // Fixed radius
-                        -strength  // NEGATIVE for expansion
+                        -strength,  // NEGATIVE for expansion
+                        "AKA"       // Effect type
                     );
                     LOGGER.info("[Infinity Aka] START: pos=({},{},{}), strength={} (expansion)",
                         x, y, z, -strength);
@@ -337,7 +340,8 @@ public class ClientPacketHandler {
                     com.justheare.paperjjk_client.shader.RefractionEffectManager.updateEffect(
                         position,
                         0.3f,  // Fixed radius
-                        -strength  // NEGATIVE for expansion
+                        -strength,  // NEGATIVE for expansion
+                        "AKA"       // Effect type
                     );
                     LOGGER.debug("[Infinity Aka] SYNC: pos=({},{},{}), strength={} (expansion)",
                         x, y, z, -strength);
@@ -346,7 +350,7 @@ public class ClientPacketHandler {
 
             case PacketIds.InfinityAkaAction.END -> {
                 client.execute(() -> {
-                    com.justheare.paperjjk_client.shader.RefractionEffectManager.clearEffects();
+                    com.justheare.paperjjk_client.shader.RefractionEffectManager.clearEffectsByType("AKA");
                     LOGGER.info("[Infinity Aka] END");
                 });
             }

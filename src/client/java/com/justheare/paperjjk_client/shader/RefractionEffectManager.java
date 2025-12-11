@@ -15,6 +15,7 @@ public class RefractionEffectManager {
         public Vec3d worldPos;
         public float radius;
         public float strength;
+        public String effectType;  // "AO" or "AKA" to distinguish effects
 
         // Interpolation fields
         private Vec3d startPos;        // Position at start of interpolation
@@ -22,12 +23,13 @@ public class RefractionEffectManager {
         private float startStrength;   // Strength at start of interpolation
         private float targetStrength;  // Target strength
         private long interpolationStartTime;
-        private static final long INTERPOLATION_TIME_MS = 250; // 500ms smooth interpolation (0.5초)
+        private static final long INTERPOLATION_TIME_MS = 250; // 250ms smooth interpolation
 
-        public RefractionEffect(Vec3d worldPos, float radius, float strength) {
+        public RefractionEffect(Vec3d worldPos, float radius, float strength, String effectType) {
             this.worldPos = worldPos;
             this.radius = radius;
             this.strength = strength;
+            this.effectType = effectType;
             this.startPos = worldPos;
             this.targetPos = worldPos;
             this.startStrength = strength;
@@ -89,8 +91,10 @@ public class RefractionEffectManager {
     /**
      * Add a refraction effect at world position
      */
-    public static void addEffect(Vec3d worldPos, float radius, float strength) {
-        effects.add(new RefractionEffect(worldPos, radius, strength));
+    public static void addEffect(Vec3d worldPos, float radius, float strength, String effectType) {
+        // Remove existing effect of the same type first
+        effects.removeIf(effect -> effect.effectType.equals(effectType));
+        effects.add(new RefractionEffect(worldPos, radius, strength, effectType));
     }
 
     /**
@@ -98,6 +102,13 @@ public class RefractionEffectManager {
      */
     public static void clearEffects() {
         effects.clear();
+    }
+
+    /**
+     * Clear effects of a specific type (AO or AKA)
+     */
+    public static void clearEffectsByType(String effectType) {
+        effects.removeIf(effect -> effect.effectType.equals(effectType));
     }
 
     /**
@@ -118,13 +129,22 @@ public class RefractionEffectManager {
      * Update existing effect with new position and strength (with interpolation)
      * If no effect exists, creates a new one
      */
-    public static void updateEffect(Vec3d worldPos, float radius, float strength) {
-        if (effects.isEmpty()) {
-            addEffect(worldPos, radius, strength);
+    public static void updateEffect(Vec3d worldPos, float radius, float strength, String effectType) {
+        // Find effect of matching type
+        RefractionEffect targetEffect = null;
+        for (RefractionEffect effect : effects) {
+            if (effect.effectType.equals(effectType)) {
+                targetEffect = effect;
+                break;
+            }
+        }
+
+        if (targetEffect == null) {
+            // No existing effect of this type, create new one
+            addEffect(worldPos, radius, strength, effectType);
         } else {
-            // Update the primary (first) effect
-            RefractionEffect effect = effects.get(0);
-            effect.updateTarget(worldPos, strength);
+            // Update existing effect of this type
+            targetEffect.updateTarget(worldPos, strength);
         }
     }
 

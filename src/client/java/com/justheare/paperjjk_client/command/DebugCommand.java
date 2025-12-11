@@ -111,7 +111,7 @@ public class DebugCommand {
         Vec3d lookVec = client.player.getRotationVec(1.0f);
         Vec3d effectPos = playerPos.add(lookVec.multiply(10));
 
-        com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(effectPos, 0.3f, 1.0f);
+        com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(effectPos, 0.3f, 1.0f, "DEBUG");
 
         context.getSource().sendFeedback(
             Text.literal("§d[PaperJJK Debug] §fAdded refraction effect at §e" +
@@ -135,7 +135,7 @@ public class DebugCommand {
         // Get strength from command argument
         float strength = FloatArgumentType.getFloat(context, "strength");
 
-        com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(effectPos, 0.3f, strength);
+        com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(effectPos, 0.3f, strength, "DEBUG");
 
         context.getSource().sendFeedback(
                 Text.literal("§d[PaperJJK Debug] §fAdded refraction effect at §e" +
