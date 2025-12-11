@@ -20,6 +20,9 @@ public class GameRendererMixin {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.world == null || client.player == null) return;
 
+        // Tick all effects for interpolation
+        com.justheare.paperjjk_client.shader.RefractionEffectManager.tickEffects();
+
         // Get all refraction effects
         java.util.List<com.justheare.paperjjk_client.shader.RefractionEffectManager.RefractionEffect> effects =
             com.justheare.paperjjk_client.shader.RefractionEffectManager.getEffects();

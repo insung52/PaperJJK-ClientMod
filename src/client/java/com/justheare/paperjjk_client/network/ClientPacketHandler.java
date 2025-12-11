@@ -274,7 +274,12 @@ public class ClientPacketHandler {
                 float strength = buf.readFloat();
 
                 client.execute(() -> {
-                    // TODO: Update existing effect with interpolation
+                    net.minecraft.util.math.Vec3d position = new net.minecraft.util.math.Vec3d(x, y, z);
+                    com.justheare.paperjjk_client.shader.RefractionEffectManager.updateEffect(
+                        position,
+                        0.3f,  // Fixed radius
+                        strength
+                    );
                     LOGGER.debug("[Infinity Ao] SYNC: pos=({},{},{}), strength={}",
                         x, y, z, strength);
                 });
