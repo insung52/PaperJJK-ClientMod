@@ -50,6 +50,7 @@ public class ClientPacketHandler {
                         case PacketIds.SCREEN_EFFECT -> handleScreenEffect(context.client(), buf);
                         case PacketIds.DOMAIN_SETTINGS_RESPONSE -> handleDomainSettingsResponse(context.client(), buf);
                         case PacketIds.INFINITY_AO -> handleInfinityAo(context.client(), buf);
+                        case PacketIds.INFINITY_AKA -> handleInfinityAka(context.client(), buf);
                         case PacketIds.HANDSHAKE -> handleHandshake(context.client(), buf);
                         default -> LOGGER.warn("Unknown packet ID: 0x{}", String.format("%02X", packetId));
                     }
@@ -293,6 +294,64 @@ public class ClientPacketHandler {
             }
 
             default -> LOGGER.warn("[Infinity Ao] Unknown action: 0x{}", String.format("%02X", action));
+        }
+    }
+
+    /**
+     * INFINITY_AKA (0x18) - Infinity Aka red expansion effect sync
+     * Handles START/SYNC/END actions for server-side Infinity Aka
+     * Uses NEGATIVE strength for expansion effect
+     */
+    private static void handleInfinityAka(MinecraftClient client, PacketByteBuf buf) {
+        byte action = buf.readByte();
+
+        switch (action) {
+            case PacketIds.InfinityAkaAction.START -> {
+                double x = buf.readDouble();
+                double y = buf.readDouble();
+                double z = buf.readDouble();
+                float strength = buf.readFloat();
+
+                client.execute(() -> {
+                    net.minecraft.util.math.Vec3d position = new net.minecraft.util.math.Vec3d(x, y, z);
+                    // Use NEGATIVE strength for expansion (repulsion) effect
+                    com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(
+                        position,
+                        0.3f,  // Fixed radius
+                        -strength  // NEGATIVE for expansion
+                    );
+                    LOGGER.info("[Infinity Aka] START: pos=({},{},{}), strength={} (expansion)",
+                        x, y, z, -strength);
+                });
+            }
+
+            case PacketIds.InfinityAkaAction.SYNC -> {
+                double x = buf.readDouble();
+                double y = buf.readDouble();
+                double z = buf.readDouble();
+                float strength = buf.readFloat();
+
+                client.execute(() -> {
+                    net.minecraft.util.math.Vec3d position = new net.minecraft.util.math.Vec3d(x, y, z);
+                    // Use NEGATIVE strength for expansion (repulsion) effect
+                    com.justheare.paperjjk_client.shader.RefractionEffectManager.updateEffect(
+                        position,
+                        0.3f,  // Fixed radius
+                        -strength  // NEGATIVE for expansion
+                    );
+                    LOGGER.debug("[Infinity Aka] SYNC: pos=({},{},{}), strength={} (expansion)",
+                        x, y, z, -strength);
+                });
+            }
+
+            case PacketIds.InfinityAkaAction.END -> {
+                client.execute(() -> {
+                    com.justheare.paperjjk_client.shader.RefractionEffectManager.clearEffects();
+                    LOGGER.info("[Infinity Aka] END");
+                });
+            }
+
+            default -> LOGGER.warn("[Infinity Aka] Unknown action: 0x{}", String.format("%02X", action));
         }
     }
 

@@ -26,6 +26,7 @@ public class PacketIds {
     public static final byte PARTICLE_EFFECT = 0x14;        // Particle effects
     public static final byte SCREEN_EFFECT = 0x15;          // Screen effects
     public static final byte INFINITY_AO = 0x17;            // Infinity Ao (refraction effect sync)
+    public static final byte INFINITY_AKA = 0x18;           // Infinity Aka (red expansion effect sync)
 
     // Bidirectional
     public static final byte HANDSHAKE = 0x20;
@@ -122,5 +123,14 @@ public class PacketIds {
         public static final byte START = 0x01;       // Start Ao (spawn refraction effect)
         public static final byte SYNC = 0x02;        // Sync position & strength (every 500ms)
         public static final byte END = 0x03;         // End Ao (remove effect)
+    }
+
+    /**
+     * Infinity Aka Action Type (action field in INFINITY_AKA packet)
+     */
+    public static class InfinityAkaAction {
+        public static final byte START = 0x01;       // Start Aka (spawn red expansion effect)
+        public static final byte SYNC = 0x02;        // Sync position & strength (every 500ms)
+        public static final byte END = 0x03;         // End Aka (remove effect)
     }
 }
