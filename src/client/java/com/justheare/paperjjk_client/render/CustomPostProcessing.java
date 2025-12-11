@@ -24,6 +24,7 @@ public class CustomPostProcessing {
     private static int uDepthTexture = -1;  // Step 1: Add depth texture uniform location
     private static int uEffectDepth = -1;   // Step 5: Effect depth uniform for occlusion testing    private static int uAspectRatio = -1;
     private static int uTime = -1;          // Bloom: Time for spiral animation
+    private static int uEffectType = -1;    // Effect type (0=AO, 1=AKA, 2=MURASAKI)
     private static int uAspectRatio = -1;
 
     // Temporary FBO and textures for post-processing
@@ -85,6 +86,7 @@ public class CustomPostProcessing {
             uniform float uEffectStrength;
             uniform float uEffectDepth;       // Step 5: Effect depth for occlusion testing
             uniform float uTime;
+            uniform int uEffectType;          // 0=AO (blue), 1=AKA (red), 2=MURASAKI (purple)
             uniform float uAspectRatio;
 
             in vec2 texCoord;
@@ -167,12 +169,18 @@ public class CustomPostProcessing {
                     // Apply soft edge fade
                     bloomFactor *= edgeFade;
 
-                    // Bloom color depends on strength sign
-                    // Positive (AO): Blue attraction effect
-                    // Negative (AKA): Red repulsion effect
-                    vec3 bloomColor = uEffectStrength > 0.0 ?
-                        vec3(0.2, 0.6, 1.0) :   // Blue for AO
-                        vec3(1.0, 0.2, 0.3);    // Red for AKA
+                    // Bloom color depends on effect type
+                    vec3 bloomColor;
+                    if (uEffectType == 0) {
+                        // AO: Blue attraction
+                        bloomColor = vec3(0.2, 0.6, 1.0);
+                    } else if (uEffectType == 1) {
+                        // AKA: Red repulsion
+                        bloomColor = vec3(1.0, 0.2, 0.3);
+                    } else {
+                        // MURASAKI: Purple expansion
+                        bloomColor = vec3(0.8, 0.2, 1.0);
+                    }
 
                     color.rgb += bloomColor * bloomFactor;
                 }
@@ -223,6 +231,7 @@ public class CustomPostProcessing {
         uEffectStrength = GL20.glGetUniformLocation(shaderProgram, "uEffectStrength");
         uEffectDepth = GL20.glGetUniformLocation(shaderProgram, "uEffectDepth");    // Step 5
         uTime = GL20.glGetUniformLocation(shaderProgram, "uTime");
+        uEffectType = GL20.glGetUniformLocation(shaderProgram, "uEffectType");
         uAspectRatio = GL20.glGetUniformLocation(shaderProgram, "uAspectRatio");
 
     }
@@ -230,8 +239,9 @@ public class CustomPostProcessing {
     /**
      * Render post-processing effect
      * Copies framebuffer, applies distortion, and draws back
+     * @param effectType 0=AO (blue), 1=AKA (red), 2=MURASAKI (purple)
      */
-    public static void render(float centerX, float centerY, float radius, float strength, float effectDepth) {
+    public static void render(float centerX, float centerY, float radius, float strength, float effectDepth, int effectType) {
         if (!initialized) {
             init();
             if (!initialized) return;
@@ -498,6 +508,7 @@ public class CustomPostProcessing {
             GL20.glUniform1f(uEffectStrength, strength); // 왜곡 강도 3배 증가
             GL20.glUniform1f(uEffectDepth, effectDepth);        // Step 5: Pass effect depth
             GL20.glUniform1f(uTime, (float)(System.currentTimeMillis() % 10000) / 1000.0f);
+            GL20.glUniform1i(uEffectType, effectType);          // Pass effect type for color
             GL20.glUniform1f(uAspectRatio, aspectRatio);
             GL20.glUniform1i(uTexture, 0);
             // Step 3: Set depth texture uniform to unit 5 (not 1)

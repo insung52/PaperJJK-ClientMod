@@ -27,6 +27,7 @@ public class PacketIds {
     public static final byte SCREEN_EFFECT = 0x15;          // Screen effects
     public static final byte INFINITY_AO = 0x17;            // Infinity Ao (refraction effect sync)
     public static final byte INFINITY_AKA = 0x18;           // Infinity Aka (red expansion effect sync)
+    public static final byte INFINITY_MURASAKI = 0x19;      // Infinity Murasaki (purple expansion effect sync)
 
     // Bidirectional
     public static final byte HANDSHAKE = 0x20;
@@ -132,5 +133,16 @@ public class PacketIds {
         public static final byte START = 0x01;       // Start Aka (spawn red expansion effect)
         public static final byte SYNC = 0x02;        // Sync position & strength (every 500ms)
         public static final byte END = 0x03;         // End Aka (remove effect)
+    }
+
+    /**
+     * Infinity Murasaki Action Type (action field in INFINITY_MURASAKI packet)
+     */
+    public static class InfinityMurasakiAction {
+        public static final byte START = 0x01;       // Start normal murasaki (moving purple expansion)
+        public static final byte SYNC = 0x02;        // Sync position & strength (moving type)
+        public static final byte START_EXPLODE = 0x03; // Start unlimit_m explosion at fixed position
+        public static final byte SYNC_RADIUS = 0x04;  // Sync expanding radius (explosion type)
+        public static final byte END = 0x05;         // End murasaki effect
     }
 }

@@ -51,6 +51,7 @@ public class ClientPacketHandler {
                         case PacketIds.DOMAIN_SETTINGS_RESPONSE -> handleDomainSettingsResponse(context.client(), buf);
                         case PacketIds.INFINITY_AO -> handleInfinityAo(context.client(), buf);
                         case PacketIds.INFINITY_AKA -> handleInfinityAka(context.client(), buf);
+                        case PacketIds.INFINITY_MURASAKI -> handleInfinityMurasaki(context.client(), buf);
                         case PacketIds.HANDSHAKE -> handleHandshake(context.client(), buf);
                         default -> LOGGER.warn("Unknown packet ID: 0x{}", String.format("%02X", packetId));
                     }
@@ -356,6 +357,105 @@ public class ClientPacketHandler {
             }
 
             default -> LOGGER.warn("[Infinity Aka] Unknown action: 0x{}", String.format("%02X", action));
+        }
+    }
+
+    /**
+     * INFINITY_MURASAKI (0x19) - Infinity Murasaki purple expansion effect sync
+     * Handles normal moving murasaki and unlimit_m explosion
+     */
+    private static void handleInfinityMurasaki(MinecraftClient client, PacketByteBuf buf) {
+        byte action = buf.readByte();
+
+        switch (action) {
+            case PacketIds.InfinityMurasakiAction.START -> {
+                // Normal murasaki - moving purple expansion (like aka)
+                double x = buf.readDouble();
+                double y = buf.readDouble();
+                double z = buf.readDouble();
+                float strength = buf.readFloat();
+
+                client.execute(() -> {
+                    net.minecraft.util.math.Vec3d position = new net.minecraft.util.math.Vec3d(x, y, z);
+                    com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(
+                        position,
+                        0.3f,  // Fixed radius
+                        -strength,  // NEGATIVE for expansion (like aka)
+                        "MURASAKI"  // Effect type
+                    );
+                    LOGGER.info("[Infinity Murasaki] START (normal): pos=({},{},{}), strength={} (expansion)",
+                        x, y, z, -strength);
+                });
+            }
+
+            case PacketIds.InfinityMurasakiAction.SYNC -> {
+                // Normal murasaki - sync position (moving type)
+                double x = buf.readDouble();
+                double y = buf.readDouble();
+                double z = buf.readDouble();
+                float strength = buf.readFloat();
+
+                client.execute(() -> {
+                    net.minecraft.util.math.Vec3d position = new net.minecraft.util.math.Vec3d(x, y, z);
+                    com.justheare.paperjjk_client.shader.RefractionEffectManager.updateEffect(
+                        position,
+                        0.3f,  // Fixed radius
+                        -strength,  // NEGATIVE for expansion
+                        "MURASAKI"
+                    );
+                    LOGGER.debug("[Infinity Murasaki] SYNC (normal): pos=({},{},{}), strength={} (expansion)",
+                        x, y, z, -strength);
+                });
+            }
+
+            case PacketIds.InfinityMurasakiAction.START_EXPLODE -> {
+                // Unlimit_m - start explosion at fixed position
+                double x = buf.readDouble();
+                double y = buf.readDouble();
+                double z = buf.readDouble();
+                float initialRadius = buf.readFloat();
+
+                client.execute(() -> {
+                    net.minecraft.util.math.Vec3d position = new net.minecraft.util.math.Vec3d(x, y, z);
+                    // Use radius as both radius and strength for explosion
+                    com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(
+                        position,
+                        initialRadius,  // Expanding radius
+                        -1.0f,  // NEGATIVE for expansion, fixed strength
+                        "MURASAKI_EXPLODE"
+                    );
+                    LOGGER.info("[Infinity Murasaki] START_EXPLODE: pos=({},{},{}), radius={}",
+                        x, y, z, initialRadius);
+                });
+            }
+
+            case PacketIds.InfinityMurasakiAction.SYNC_RADIUS -> {
+                // Unlimit_m - update expanding radius
+                float radius = buf.readFloat();
+
+                client.execute(() -> {
+                    // Find MURASAKI_EXPLODE effect and update its radius
+                    var effects = com.justheare.paperjjk_client.shader.RefractionEffectManager.getEffects();
+                    for (var effect : effects) {
+                        if ("MURASAKI_EXPLODE".equals(effect.effectType)) {
+                            effect.radius = radius;
+                            LOGGER.debug("[Infinity Murasaki] SYNC_RADIUS: radius={}", radius);
+                            break;
+                        }
+                    }
+                });
+            }
+
+            case PacketIds.InfinityMurasakiAction.END -> {
+                client.execute(() -> {
+                    // Clear both types of murasaki effects
+                    com.justheare.paperjjk_client.shader.RefractionEffectManager.clearEffectsByType("MURASAKI");
+                    com.justheare.paperjjk_client.shader.RefractionEffectManager.clearEffectsByType("MURASAKI_EXPLODE");
+                    LOGGER.info("[Infinity Murasaki] END");
+                });
+            }
+
+            default -> LOGGER.warn("[Infinity Murasaki] Unknown action: 0x{}", String.format("%02X", action));
         }
     }
 

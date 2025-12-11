@@ -75,12 +75,21 @@ public class GameRendererMixin {
 
                 // Apply custom post-processing with depth
                 // Pass raw strength for bloom intensity control in shader
+                // Determine effect type: AO=0, AKA=1, MURASAKI=2
+                int effectType = 0; // Default AO
+                if ("AKA".equals(effect.effectType)) {
+                    effectType = 1;
+                } else if ("MURASAKI".equals(effect.effectType) || "MURASAKI_EXPLODE".equals(effect.effectType)) {
+                    effectType = 2;
+                }
+
                 com.justheare.paperjjk_client.render.CustomPostProcessing.render(
                     (float) screenPos.x,
                     (float) screenPos.y,
                     scaledRadius,
                     effect.strength,
-                    effectDepth
+                    effectDepth,
+                    effectType
                 );
             }
         }
