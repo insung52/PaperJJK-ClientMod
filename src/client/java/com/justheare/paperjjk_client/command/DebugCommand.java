@@ -100,9 +100,12 @@ public class DebugCommand {
     }
 
     private static int addRefractionEffect(CommandContext<FabricClientCommandSource> context) {
+        com.justheare.paperjjk_client.DebugConfig.log("DebugCommand", "addRefractionEffect() CALLED");
+
         // Get player position and add effect 10 blocks ahead
         net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
         if (client.player == null) {
+            com.justheare.paperjjk_client.DebugConfig.log("DebugCommand", "ERROR: No player found");
             context.getSource().sendFeedback(Text.literal("§c[Error] No player found"));
             return 0;
         }
@@ -111,7 +114,12 @@ public class DebugCommand {
         Vec3d lookVec = client.player.getRotationVec(1.0f);
         Vec3d effectPos = playerPos.add(lookVec.multiply(10));
 
+        com.justheare.paperjjk_client.DebugConfig.log("DebugCommand",
+            "Adding refraction effect at: " + String.format("(%.1f, %.1f, %.1f)", effectPos.x, effectPos.y, effectPos.z));
+
         com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(effectPos, 0.3f, 1.0f, "DEBUG");
+
+        com.justheare.paperjjk_client.DebugConfig.log("DebugCommand", "Effect added successfully");
 
         context.getSource().sendFeedback(
             Text.literal("§d[PaperJJK Debug] §fAdded refraction effect at §e" +
@@ -120,10 +128,13 @@ public class DebugCommand {
         return 1;
     }
     private static int addRefractionEffectWithStrength(CommandContext<FabricClientCommandSource> context) {
+        com.justheare.paperjjk_client.DebugConfig.log("DebugCommand", "addRefractionEffectWithStrength() CALLED");
+
         // Get player position and add effect 10 blocks ahead
         net.minecraft.client.MinecraftClient client =
                 net.minecraft.client.MinecraftClient.getInstance();
         if (client.player == null) {
+            com.justheare.paperjjk_client.DebugConfig.log("DebugCommand", "ERROR: No player found");
             context.getSource().sendFeedback(Text.literal("§c[Error] No player found"));
             return 0;
         }
@@ -135,7 +146,13 @@ public class DebugCommand {
         // Get strength from command argument
         float strength = FloatArgumentType.getFloat(context, "strength");
 
+        com.justheare.paperjjk_client.DebugConfig.log("DebugCommand",
+            "Adding refraction effect at: " + String.format("(%.1f, %.1f, %.1f)", effectPos.x, effectPos.y, effectPos.z) +
+            " with strength: " + strength);
+
         com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(effectPos, 0.3f, strength, "DEBUG");
+
+        com.justheare.paperjjk_client.DebugConfig.log("DebugCommand", "Effect added successfully");
 
         context.getSource().sendFeedback(
                 Text.literal("§d[PaperJJK Debug] §fAdded refraction effect at §e" +
@@ -153,7 +170,12 @@ public class DebugCommand {
     }
 
     private static int clearRefractionEffects(CommandContext<FabricClientCommandSource> context) {
+        com.justheare.paperjjk_client.DebugConfig.log("DebugCommand", "clearRefractionEffects() CALLED");
+
         com.justheare.paperjjk_client.shader.RefractionEffectManager.clearEffects();
+
+        com.justheare.paperjjk_client.DebugConfig.log("DebugCommand", "All effects cleared");
+
         context.getSource().sendFeedback(
             Text.literal("§d[PaperJJK Debug] §fCleared all refraction effects")
         );

@@ -92,16 +92,38 @@ public class RefractionEffectManager {
      * Add a refraction effect at world position
      */
     public static void addEffect(Vec3d worldPos, float radius, float strength, String effectType) {
+        com.justheare.paperjjk_client.DebugConfig.log("RefractionEffectManager",
+            "addEffect() - Type: " + effectType + ", Pos: " +
+            String.format("(%.1f, %.1f, %.1f)", worldPos.x, worldPos.y, worldPos.z) +
+            ", Radius: " + radius + ", Strength: " + strength);
+
         // Remove existing effect of the same type first
+        int removedCount = (int) effects.stream().filter(effect -> effect.effectType.equals(effectType)).count();
         effects.removeIf(effect -> effect.effectType.equals(effectType));
+
+        if (removedCount > 0) {
+            com.justheare.paperjjk_client.DebugConfig.log("RefractionEffectManager",
+                "Removed " + removedCount + " existing effect(s) of type: " + effectType);
+        }
+
         effects.add(new RefractionEffect(worldPos, radius, strength, effectType));
+
+        com.justheare.paperjjk_client.DebugConfig.log("RefractionEffectManager",
+            "Effect added successfully. Total effects: " + effects.size());
     }
 
     /**
      * Clear all effects
      */
     public static void clearEffects() {
+        int count = effects.size();
+        com.justheare.paperjjk_client.DebugConfig.log("RefractionEffectManager",
+            "clearEffects() - Clearing " + count + " effect(s)");
+
         effects.clear();
+
+        com.justheare.paperjjk_client.DebugConfig.log("RefractionEffectManager",
+            "All effects cleared. Total effects: " + effects.size());
     }
 
     /**
@@ -115,6 +137,11 @@ public class RefractionEffectManager {
      * Get all active effects
      */
     public static List<RefractionEffect> getEffects() {
+        // Only log occasionally to avoid spam
+        if (System.currentTimeMillis() % 1000 < 16 && !effects.isEmpty()) {
+            com.justheare.paperjjk_client.DebugConfig.log("RefractionEffectManager",
+                "getEffects() - Returning " + effects.size() + " effect(s)");
+        }
         return effects;
     }
 
@@ -153,6 +180,12 @@ public class RefractionEffectManager {
      * Should be called every render frame
      */
     public static void tickEffects() {
+        // Only log occasionally to avoid spam (once per second)
+        if (System.currentTimeMillis() % 1000 < 16 && !effects.isEmpty()) {
+            com.justheare.paperjjk_client.DebugConfig.log("RefractionEffectManager",
+                "tickEffects() - Ticking " + effects.size() + " effect(s)");
+        }
+
         for (RefractionEffect effect : effects) {
             effect.tick();
         }

@@ -17,8 +17,13 @@ public class GameRendererMixin {
 
     @Inject(method = "renderWorld", at = @At("RETURN"))
     private void paperjjk$applyPostProcessing(RenderTickCounter tickCounter, CallbackInfo ci) {
+        com.justheare.paperjjk_client.DebugConfig.log("GameRendererMixin", "=== renderWorld RETURN - Starting post-processing ===");
+
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.world == null || client.player == null) return;
+        if (client.world == null || client.player == null) {
+            com.justheare.paperjjk_client.DebugConfig.log("GameRendererMixin", "Skipping: world or player is null");
+            return;
+        }
 
         // Tick all effects for interpolation
         com.justheare.paperjjk_client.shader.RefractionEffectManager.tickEffects();
@@ -27,9 +32,12 @@ public class GameRendererMixin {
         java.util.List<com.justheare.paperjjk_client.shader.RefractionEffectManager.RefractionEffect> effects =
             com.justheare.paperjjk_client.shader.RefractionEffectManager.getEffects();
 
-        if (effects.isEmpty()) return;
+        com.justheare.paperjjk_client.DebugConfig.log("GameRendererMixin", "Found " + effects.size() + " effect(s)");
 
-        //System.out.println("[GameRendererMixin] renderWorld RETURN - applying post-processing!");
+        if (effects.isEmpty()) {
+            com.justheare.paperjjk_client.DebugConfig.log("GameRendererMixin", "No effects to render, exiting");
+            return;
+        }
 
         // Get camera and projection matrix
         net.minecraft.client.render.Camera camera = client.gameRenderer.getCamera();
@@ -38,6 +46,9 @@ public class GameRendererMixin {
                 client.options.getFov().getValue().floatValue()
             )
         );
+
+        com.justheare.paperjjk_client.DebugConfig.log("GameRendererMixin",
+            "Camera pos: " + String.format("(%.1f, %.1f, %.1f)", camera.getPos().x, camera.getPos().y, camera.getPos().z));
 
         // Get view matrix (camera transformation)
         org.joml.Matrix4f viewMatrix = new org.joml.Matrix4f();
@@ -49,14 +60,23 @@ public class GameRendererMixin {
             (float) -camera.getPos().z
         );
 
+        com.justheare.paperjjk_client.DebugConfig.log("GameRendererMixin", "Starting effect rendering loop...");
+
         // Apply each refraction effect
+        int effectIndex = 0;
         for (com.justheare.paperjjk_client.shader.RefractionEffectManager.RefractionEffect effect : effects) {
+            com.justheare.paperjjk_client.DebugConfig.log("GameRendererMixin",
+                "Processing effect #" + effectIndex + " - Type: " + effect.effectType +
+                ", WorldPos: " + String.format("(%.1f, %.1f, %.1f)", effect.worldPos.x, effect.worldPos.y, effect.worldPos.z));
             // Convert world position to screen coordinates
             net.minecraft.util.math.Vec3d screenPos =
                 com.justheare.paperjjk_client.util.WorldToScreenUtil.worldToScreen(
                     effect.worldPos, camera, projectionMatrix);
 
             if (screenPos != null) {
+                com.justheare.paperjjk_client.DebugConfig.log("GameRendererMixin",
+                    "  ScreenPos: " + String.format("(%.3f, %.3f, %.3f)", screenPos.x, screenPos.y, screenPos.z));
+
                 float distance = (float) screenPos.z;
 
                 // Calculate radius - use effect.radius for MURASAKI_EXPLODE, otherwise use fixed base
@@ -73,11 +93,10 @@ public class GameRendererMixin {
                 // Calculate effect depth in [0, 1] range for occlusion testing
                 float effectDepth = calculateDepth(effect.worldPos, viewMatrix, projectionMatrix);
 
-                /*.out.println("[GameRendererMixin] Applying distortion: center=(" +
-                    String.format("%.3f", screenPos.x) + "," + String.format("%.3f", screenPos.y) +
-                    ") radius=" + String.format("%.3f", scaledRadius) +
-                    " strength=" + String.format("%.3f", effectiveDistortion) +
-                    " depth=" + String.format("%.3f", effectDepth));*/
+                com.justheare.paperjjk_client.DebugConfig.log("GameRendererMixin",
+                    "  Radius: " + String.format("%.3f", scaledRadius) +
+                    ", Strength: " + String.format("%.3f", effect.strength) +
+                    ", Depth: " + String.format("%.3f", effectDepth));
 
                 // Apply custom post-processing with depth
                 // Pass raw strength for bloom intensity control in shader
@@ -89,6 +108,9 @@ public class GameRendererMixin {
                     effectType = 2;
                 }
 
+                com.justheare.paperjjk_client.DebugConfig.log("GameRendererMixin",
+                    "  Calling CustomPostProcessing.render() with effectType=" + effectType);
+
                 com.justheare.paperjjk_client.render.CustomPostProcessing.render(
                     (float) screenPos.x,
                     (float) screenPos.y,
@@ -97,8 +119,18 @@ public class GameRendererMixin {
                     effectDepth,
                     effectType
                 );
+
+                com.justheare.paperjjk_client.DebugConfig.log("GameRendererMixin",
+                    "  CustomPostProcessing.render() completed");
+            } else {
+                com.justheare.paperjjk_client.DebugConfig.log("GameRendererMixin",
+                    "  ScreenPos is NULL - effect is behind camera or off-screen");
             }
+
+            effectIndex++;
         }
+
+        com.justheare.paperjjk_client.DebugConfig.log("GameRendererMixin", "=== Post-processing complete ===");
     }
 
     /**

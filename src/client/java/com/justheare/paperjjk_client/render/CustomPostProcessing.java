@@ -242,9 +242,19 @@ public class CustomPostProcessing {
      * @param effectType 0=AO (blue), 1=AKA (red), 2=MURASAKI (purple)
      */
     public static void render(float centerX, float centerY, float radius, float strength, float effectDepth, int effectType) {
+        com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+            "render() CALLED - Center: (" + String.format("%.3f", centerX) + "," + String.format("%.3f", centerY) +
+            "), Radius: " + String.format("%.3f", radius) + ", Strength: " + String.format("%.3f", strength) +
+            ", Depth: " + String.format("%.3f", effectDepth) + ", Type: " + effectType);
+
         if (!initialized) {
+            com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing", "Not initialized, calling init()...");
             init();
-            if (!initialized) return;
+            if (!initialized) {
+                com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing", "ERROR: Initialization failed!");
+                return;
+            }
+            com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing", "Initialization complete");
         }
 
         try {
@@ -252,14 +262,21 @@ public class CustomPostProcessing {
             MinecraftClient client = MinecraftClient.getInstance();
             Framebuffer mainFramebuffer = client.getFramebuffer();
 
+            com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                "Framebuffer size: " + mainFramebuffer.textureWidth + "x" + mainFramebuffer.textureHeight);
+
             // In Minecraft 1.21, Framebuffer doesn't store FBO ID directly
             // Instead, we use the currently bound FBO (set by Minecraft's rendering pipeline)
             // During HudRenderCallback, the main framebuffer should already be bound
 
             // First, try to get the color texture's GL ID
             int mainTextureId = getFramebufferTextureId(mainFramebuffer);
+            com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                "Main texture ID: " + mainTextureId);
+
             if (mainTextureId == -1) {
-                // System.err.println("[CustomPostProcessing] Failed to get main framebuffer texture ID");
+                com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                    "ERROR: Failed to get main framebuffer texture ID");
                 return;
             }
 
@@ -285,6 +302,8 @@ public class CustomPostProcessing {
 
             // Get the currently bound FBO - this should be Minecraft's rendering FBO
             int currentFbo = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
+            com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                "Current FBO binding: " + currentFbo);
 
             // If it's FBO 0 (default framebuffer), we need a different approach
             // Try to bind the colorAttachment's parent FBO by querying it
@@ -578,8 +597,12 @@ public class CustomPostProcessing {
             if (depthTestEnabled) GL11.glEnable(GL11.GL_DEPTH_TEST);
             if (blendEnabled) GL11.glEnable(GL11.GL_BLEND);
 
+            com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                "=== render() COMPLETED SUCCESSFULLY ===");
+
         } catch (Exception e) {
-            //System.err.println("[CustomPostProcessing] Error during render:");
+            com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                "ERROR during render: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -660,16 +683,68 @@ public class CustomPostProcessing {
      */
     private static int getFramebufferTextureId(Framebuffer framebuffer) {
         try {
-            // Get colorAttachment field
-            java.lang.reflect.Field colorAttachmentField = Framebuffer.class.getDeclaredField("colorAttachment");
-            colorAttachmentField.setAccessible(true);
-            Object colorAttachment = colorAttachmentField.get(framebuffer);
+            // Try multiple possible field names for color attachment
+            String[] possibleFieldNames = {"field_1475", "colorAttachment", "field_1469", "a", "colorTexture", "mainTexture"};
+            Object colorAttachment = null;
 
-            // Call getGlId() method
-            java.lang.reflect.Method getGlIdMethod = colorAttachment.getClass().getMethod("getGlId");
-            return (int) getGlIdMethod.invoke(colorAttachment);
+            for (String fieldName : possibleFieldNames) {
+                try {
+                    java.lang.reflect.Field field = Framebuffer.class.getDeclaredField(fieldName);
+                    field.setAccessible(true);
+                    colorAttachment = field.get(framebuffer);
+
+                    com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                        "Found color attachment via field: " + fieldName);
+                    break;
+                } catch (NoSuchFieldException e) {
+                    com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                        "Field not found: " + fieldName);
+                }
+            }
+
+            if (colorAttachment == null) {
+                com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                    "ERROR: Could not find color attachment field. Available fields:");
+
+                // Print all available fields for debugging
+                for (java.lang.reflect.Field field : Framebuffer.class.getDeclaredFields()) {
+                    com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                        "  - " + field.getName() + " (" + field.getType().getName() + ")");
+                }
+                return -1;
+            }
+
+            // Try multiple possible method names for getting GL ID
+            String[] possibleMethodNames = {"iris$getGlId", "getGlId", "method_4624", "getId", "a", "b"};
+
+            for (String methodName : possibleMethodNames) {
+                try {
+                    java.lang.reflect.Method method = colorAttachment.getClass().getMethod(methodName);
+                    int textureId = (int) method.invoke(colorAttachment);
+
+                    com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                        "Got texture ID " + textureId + " via method: " + methodName);
+                    return textureId;
+                } catch (NoSuchMethodException e) {
+                    com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                        "Method not found: " + methodName);
+                }
+            }
+
+            com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                "ERROR: Could not find getGlId method. Available methods:");
+
+            // Print all available methods for debugging
+            for (java.lang.reflect.Method method : colorAttachment.getClass().getMethods()) {
+                com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                    "  - " + method.getName() + "()");
+            }
+
+            return -1;
         } catch (Exception e) {
-            // System.err.println("[CustomPostProcessing] Failed to get texture ID: " + e.getMessage());
+            com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                "ERROR in getFramebufferTextureId: " + e.getMessage());
+            e.printStackTrace();
             return -1;
         }
     }
