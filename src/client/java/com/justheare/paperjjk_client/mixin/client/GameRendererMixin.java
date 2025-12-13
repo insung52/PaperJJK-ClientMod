@@ -1,5 +1,6 @@
 package com.justheare.paperjjk_client.mixin.client;
 
+import com.justheare.paperjjk_client.mixin.client.CameraAccessor;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.RenderTickCounter;
@@ -48,16 +49,19 @@ public class GameRendererMixin {
         );
 
         com.justheare.paperjjk_client.DebugConfig.log("GameRendererMixin",
-            "Camera pos: " + String.format("(%.1f, %.1f, %.1f)", camera.getPos().x, camera.getPos().y, camera.getPos().z));
+            "Camera pos: " + String.format("(%.1f, %.1f, %.1f)",
+                ((CameraAccessor) camera).getPos().x,
+                ((CameraAccessor) camera).getPos().y,
+                ((CameraAccessor) camera).getPos().z));
 
         // Get view matrix (camera transformation)
         org.joml.Matrix4f viewMatrix = new org.joml.Matrix4f();
         viewMatrix.rotationX((float) Math.toRadians(camera.getPitch()));
         viewMatrix.rotateY((float) Math.toRadians(camera.getYaw()+180.0f));
         viewMatrix.translate(
-            (float) -camera.getPos().x,
-            (float) -camera.getPos().y,
-            (float) -camera.getPos().z
+            (float) -((CameraAccessor) camera).getPos().x,
+            (float) -((CameraAccessor) camera).getPos().y,
+            (float) -((CameraAccessor) camera).getPos().z
         );
 
         com.justheare.paperjjk_client.DebugConfig.log("GameRendererMixin", "Starting effect rendering loop...");

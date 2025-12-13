@@ -31,18 +31,6 @@ bin/
 # fabric
 
 run/
-logs/
-.cache/
-remapped-sources/
-
-# minecraft
-
-options.txt
-servers.dat
-saves/
-screenshots/
-replay_videos/
-*.log
 
 # java
 
@@ -50,21 +38,3 @@ hs_err_*.log
 replay_*.log
 *.hprof
 *.jfr
-*.class
-
-# package files
-
-*.jar
-!gradle/wrapper/gradle-wrapper.jar
-*.war
-*.nar
-*.ear
-*.zip
-*.tar.gz
-*.rar
-
-# windows
-
-Thumbs.db
-ehthumbs.db
-Desktop.ini

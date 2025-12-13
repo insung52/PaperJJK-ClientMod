@@ -1,5 +1,6 @@
 package com.justheare.paperjjk_client.util;
 
+import com.justheare.paperjjk_client.mixin.client.CameraAccessor;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
 import net.minecraft.util.math.Vec3d;
@@ -20,7 +21,7 @@ public class WorldToScreenUtil {
         MinecraftClient client = MinecraftClient.getInstance();
 
         // Get camera position
-        Vec3d cameraPos = camera.getPos();
+        Vec3d cameraPos = ((CameraAccessor) camera).getPos();
 
         // World position relative to camera
         Vector3f relativePos = new Vector3f(
