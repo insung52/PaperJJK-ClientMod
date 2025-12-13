@@ -256,6 +256,7 @@ public class ClientPacketHandler {
                 double y = buf.readDouble();
                 double z = buf.readDouble();
                 float strength = buf.readFloat();
+                String uniqueId = readUTF(buf);
 
                 client.execute(() -> {
                     net.minecraft.util.math.Vec3d position = new net.minecraft.util.math.Vec3d(x, y, z);
@@ -263,10 +264,11 @@ public class ClientPacketHandler {
                         position,
                         0.3f,  // Fixed radius
                         strength,
-                        "AO"   // Effect type
+                        "AO",  // Effect type
+                        uniqueId
                     );
-                    LOGGER.info("[Infinity Ao] START: pos=({},{},{}), strength={}",
-                        x, y, z, strength);
+                    LOGGER.info("[Infinity Ao] START: pos=({},{},{}), strength={}, id={}",
+                        x, y, z, strength, uniqueId);
                 });
             }
 
@@ -275,6 +277,7 @@ public class ClientPacketHandler {
                 double y = buf.readDouble();
                 double z = buf.readDouble();
                 float strength = buf.readFloat();
+                String uniqueId = readUTF(buf);
 
                 client.execute(() -> {
                     net.minecraft.util.math.Vec3d position = new net.minecraft.util.math.Vec3d(x, y, z);
@@ -282,17 +285,20 @@ public class ClientPacketHandler {
                         position,
                         0.3f,  // Fixed radius
                         strength,
-                        "AO"   // Effect type
+                        "AO",  // Effect type
+                        uniqueId
                     );
-                    LOGGER.debug("[Infinity Ao] SYNC: pos=({},{},{}), strength={}",
-                        x, y, z, strength);
+                    LOGGER.debug("[Infinity Ao] SYNC: pos=({},{},{}), strength={}, id={}",
+                        x, y, z, strength, uniqueId);
                 });
             }
 
             case PacketIds.InfinityAoAction.END -> {
+                String uniqueId = readUTF(buf);
+
                 client.execute(() -> {
-                    com.justheare.paperjjk_client.shader.RefractionEffectManager.clearEffectsByType("AO");
-                    LOGGER.info("[Infinity Ao] END");
+                    com.justheare.paperjjk_client.shader.RefractionEffectManager.removeEffectById(uniqueId);
+                    LOGGER.info("[Infinity Ao] END: id={}", uniqueId);
                 });
             }
 
@@ -314,6 +320,11 @@ public class ClientPacketHandler {
                 double y = buf.readDouble();
                 double z = buf.readDouble();
                 float strength = buf.readFloat();
+                // Read UTF string (Java DataOutput format, not Minecraft format)
+                String uniqueId = readUTF(buf);
+
+                LOGGER.info("[DEBUG PACKET READ] AKA START - Read uniqueId from buffer: '{}', length: {}",
+                    uniqueId, uniqueId == null ? "null" : uniqueId.length());
 
                 client.execute(() -> {
                     net.minecraft.util.math.Vec3d position = new net.minecraft.util.math.Vec3d(x, y, z);
@@ -322,10 +333,11 @@ public class ClientPacketHandler {
                         position,
                         0.3f,  // Fixed radius
                         -strength,  // NEGATIVE for expansion
-                        "AKA"       // Effect type
+                        "AKA",      // Effect type
+                        uniqueId
                     );
-                    LOGGER.info("[Infinity Aka] START: pos=({},{},{}), strength={} (expansion)",
-                        x, y, z, -strength);
+                    LOGGER.info("[Infinity Aka] START: pos=({},{},{}), strength={} (expansion), id={}",
+                        x, y, z, -strength, uniqueId);
                 });
             }
 
@@ -334,6 +346,7 @@ public class ClientPacketHandler {
                 double y = buf.readDouble();
                 double z = buf.readDouble();
                 float strength = buf.readFloat();
+                String uniqueId = readUTF(buf);
 
                 client.execute(() -> {
                     net.minecraft.util.math.Vec3d position = new net.minecraft.util.math.Vec3d(x, y, z);
@@ -342,17 +355,20 @@ public class ClientPacketHandler {
                         position,
                         0.3f,  // Fixed radius
                         -strength,  // NEGATIVE for expansion
-                        "AKA"       // Effect type
+                        "AKA",      // Effect type
+                        uniqueId
                     );
-                    LOGGER.debug("[Infinity Aka] SYNC: pos=({},{},{}), strength={} (expansion)",
-                        x, y, z, -strength);
+                    LOGGER.debug("[Infinity Aka] SYNC: pos=({},{},{}), strength={} (expansion), id={}",
+                        x, y, z, -strength, uniqueId);
                 });
             }
 
             case PacketIds.InfinityAkaAction.END -> {
+                String uniqueId = readUTF(buf);
+
                 client.execute(() -> {
-                    com.justheare.paperjjk_client.shader.RefractionEffectManager.clearEffectsByType("AKA");
-                    LOGGER.info("[Infinity Aka] END");
+                    com.justheare.paperjjk_client.shader.RefractionEffectManager.removeEffectById(uniqueId);
+                    LOGGER.info("[Infinity Aka] END: id={}", uniqueId);
                 });
             }
 
@@ -374,6 +390,7 @@ public class ClientPacketHandler {
                 double y = buf.readDouble();
                 double z = buf.readDouble();
                 float strength = buf.readFloat();
+                String uniqueId = readUTF(buf);
 
                 client.execute(() -> {
                     net.minecraft.util.math.Vec3d position = new net.minecraft.util.math.Vec3d(x, y, z);
@@ -381,10 +398,11 @@ public class ClientPacketHandler {
                         position,
                         0.3f,  // Fixed radius
                         -strength,  // NEGATIVE for expansion (like aka)
-                        "MURASAKI"  // Effect type
+                        "MURASAKI",  // Effect type
+                        uniqueId
                     );
-                    LOGGER.info("[Infinity Murasaki] START (normal): pos=({},{},{}), strength={} (expansion)",
-                        x, y, z, -strength);
+                    LOGGER.info("[Infinity Murasaki] START (normal): pos=({},{},{}), strength={} (expansion), id={}",
+                        x, y, z, -strength, uniqueId);
                 });
             }
 
@@ -394,6 +412,7 @@ public class ClientPacketHandler {
                 double y = buf.readDouble();
                 double z = buf.readDouble();
                 float strength = buf.readFloat();
+                String uniqueId = readUTF(buf);
 
                 client.execute(() -> {
                     net.minecraft.util.math.Vec3d position = new net.minecraft.util.math.Vec3d(x, y, z);
@@ -401,10 +420,11 @@ public class ClientPacketHandler {
                         position,
                         0.3f,  // Fixed radius
                         -strength,  // NEGATIVE for expansion
-                        "MURASAKI"
+                        "MURASAKI",
+                        uniqueId
                     );
-                    LOGGER.debug("[Infinity Murasaki] SYNC (normal): pos=({},{},{}), strength={} (expansion)",
-                        x, y, z, -strength);
+                    LOGGER.debug("[Infinity Murasaki] SYNC (normal): pos=({},{},{}), strength={} (expansion), id={}",
+                        x, y, z, -strength, uniqueId);
                 });
             }
 
@@ -414,6 +434,7 @@ public class ClientPacketHandler {
                 double y = buf.readDouble();
                 double z = buf.readDouble();
                 float initialRadius = buf.readFloat();
+                String uniqueId = readUTF(buf);
 
                 client.execute(() -> {
                     net.minecraft.util.math.Vec3d position = new net.minecraft.util.math.Vec3d(x, y, z);
@@ -422,36 +443,35 @@ public class ClientPacketHandler {
                         position,
                         initialRadius,  // Expanding radius
                         -1.0f,  // NEGATIVE for expansion, fixed strength
-                        "MURASAKI_EXPLODE"
+                        "MURASAKI_EXPLODE",
+                        uniqueId
                     );
-                    LOGGER.info("[Infinity Murasaki] START_EXPLODE: pos=({},{},{}), radius={}",
-                        x, y, z, initialRadius);
+                    LOGGER.info("[Infinity Murasaki] START_EXPLODE: pos=({},{},{}), radius={}, id={}",
+                        x, y, z, initialRadius, uniqueId);
                 });
             }
 
             case PacketIds.InfinityMurasakiAction.SYNC_RADIUS -> {
                 // Unlimit_m - update expanding radius
                 float radius = buf.readFloat();
+                String uniqueId = readUTF(buf);
 
                 client.execute(() -> {
-                    // Find MURASAKI_EXPLODE effect and update its radius
-                    var effects = com.justheare.paperjjk_client.shader.RefractionEffectManager.getEffects();
-                    for (var effect : effects) {
-                        if ("MURASAKI_EXPLODE".equals(effect.effectType)) {
-                            effect.radius = radius;
-                            LOGGER.debug("[Infinity Murasaki] SYNC_RADIUS: radius={}", radius);
-                            break;
-                        }
+                    // Find MURASAKI_EXPLODE effect by ID and update its radius
+                    var effect = com.justheare.paperjjk_client.shader.RefractionEffectManager.getEffectById(uniqueId);
+                    if (effect != null && "MURASAKI_EXPLODE".equals(effect.effectType)) {
+                        effect.radius = radius;
+                        LOGGER.debug("[Infinity Murasaki] SYNC_RADIUS: radius={}, id={}", radius, uniqueId);
                     }
                 });
             }
 
             case PacketIds.InfinityMurasakiAction.END -> {
+                String uniqueId = readUTF(buf);
+
                 client.execute(() -> {
-                    // Clear both types of murasaki effects
-                    com.justheare.paperjjk_client.shader.RefractionEffectManager.clearEffectsByType("MURASAKI");
-                    com.justheare.paperjjk_client.shader.RefractionEffectManager.clearEffectsByType("MURASAKI_EXPLODE");
-                    LOGGER.info("[Infinity Murasaki] END");
+                    com.justheare.paperjjk_client.shader.RefractionEffectManager.removeEffectById(uniqueId);
+                    LOGGER.info("[Infinity Murasaki] END: id={}", uniqueId);
                 });
             }
 
@@ -472,6 +492,22 @@ public class ClientPacketHandler {
                 version, modVersion, String.format("%02X", features));
             // TODO: Version compatibility check
         });
+    }
+
+    /**
+     * Read UTF string in Java DataOutput format (used by Bukkit's ByteArrayDataOutput)
+     * Format: 2-byte length + Modified UTF-8 bytes
+     */
+    private static String readUTF(PacketByteBuf buf) {
+        try {
+            int length = buf.readUnsignedShort();
+            byte[] bytes = new byte[length];
+            buf.readBytes(bytes);
+            return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            LOGGER.error("Failed to read UTF string", e);
+            return "";
+        }
     }
 
     /**

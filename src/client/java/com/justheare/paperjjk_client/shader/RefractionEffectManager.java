@@ -16,6 +16,7 @@ public class RefractionEffectManager {
         public float radius;
         public float strength;
         public String effectType;  // "AO" or "AKA" to distinguish effects
+        public String uniqueId;     // Unique identifier for this specific effect instance
 
         // Interpolation fields
         private Vec3d startPos;        // Position at start of interpolation
@@ -25,11 +26,12 @@ public class RefractionEffectManager {
         private long interpolationStartTime;
         private static final long INTERPOLATION_TIME_MS = 250; // 250ms smooth interpolation
 
-        public RefractionEffect(Vec3d worldPos, float radius, float strength, String effectType) {
+        public RefractionEffect(Vec3d worldPos, float radius, float strength, String effectType, String uniqueId) {
             this.worldPos = worldPos;
             this.radius = radius;
             this.strength = strength;
             this.effectType = effectType;
+            this.uniqueId = uniqueId;
             this.startPos = worldPos;
             this.targetPos = worldPos;
             this.startStrength = strength;
@@ -89,27 +91,47 @@ public class RefractionEffectManager {
     }
 
     /**
-     * Add a refraction effect at world position
+     * Add a refraction effect at world position with unique ID
+     * @param uniqueId Unique identifier for this effect (e.g., "AKA_player123_skill456")
      */
-    public static void addEffect(Vec3d worldPos, float radius, float strength, String effectType) {
+    public static void addEffect(Vec3d worldPos, float radius, float strength, String effectType, String uniqueId) {
         com.justheare.paperjjk_client.DebugConfig.log("RefractionEffectManager",
-            "addEffect() - Type: " + effectType + ", Pos: " +
+            "addEffect() - Type: " + effectType + ", ID: " + uniqueId + ", Pos: " +
             String.format("(%.1f, %.1f, %.1f)", worldPos.x, worldPos.y, worldPos.z) +
             ", Radius: " + radius + ", Strength: " + strength);
 
-        // Remove existing effect of the same type first
-        int removedCount = (int) effects.stream().filter(effect -> effect.effectType.equals(effectType)).count();
-        effects.removeIf(effect -> effect.effectType.equals(effectType));
-
-        if (removedCount > 0) {
-            com.justheare.paperjjk_client.DebugConfig.log("RefractionEffectManager",
-                "Removed " + removedCount + " existing effect(s) of type: " + effectType);
+        // Check if effect with this unique ID already exists
+        RefractionEffect existingEffect = null;
+        for (RefractionEffect effect : effects) {
+            if (effect.uniqueId.equals(uniqueId)) {
+                existingEffect = effect;
+                break;
+            }
         }
 
-        effects.add(new RefractionEffect(worldPos, radius, strength, effectType));
+        if (existingEffect != null) {
+            // Update existing effect with smooth interpolation
+            com.justheare.paperjjk_client.DebugConfig.log("RefractionEffectManager",
+                "Effect with ID " + uniqueId + " already exists, updating position/strength");
+            existingEffect.updateTarget(worldPos, strength);
+            existingEffect.radius = radius; // Update radius immediately (not interpolated)
+        } else {
+            // Add new effect
+            effects.add(new RefractionEffect(worldPos, radius, strength, effectType, uniqueId));
+            com.justheare.paperjjk_client.DebugConfig.log("RefractionEffectManager",
+                "New effect added. Total effects: " + effects.size());
+        }
+    }
 
-        com.justheare.paperjjk_client.DebugConfig.log("RefractionEffectManager",
-            "Effect added successfully. Total effects: " + effects.size());
+    /**
+     * Legacy method for backward compatibility - generates unique ID from effectType
+     * @deprecated Use addEffect with uniqueId parameter instead
+     */
+    @Deprecated
+    public static void addEffect(Vec3d worldPos, float radius, float strength, String effectType) {
+        // Generate a simple unique ID from effect type and timestamp
+        String uniqueId = effectType + "_" + System.currentTimeMillis();
+        addEffect(worldPos, radius, strength, effectType, uniqueId);
     }
 
     /**
@@ -130,7 +152,39 @@ public class RefractionEffectManager {
      * Clear effects of a specific type (AO or AKA)
      */
     public static void clearEffectsByType(String effectType) {
+        int beforeCount = effects.size();
         effects.removeIf(effect -> effect.effectType.equals(effectType));
+        int afterCount = effects.size();
+
+        com.justheare.paperjjk_client.DebugConfig.log("RefractionEffectManager",
+            "Cleared " + (beforeCount - afterCount) + " effect(s) of type: " + effectType);
+    }
+
+    /**
+     * Remove a specific effect by unique ID
+     */
+    public static void removeEffectById(String uniqueId) {
+        boolean removed = effects.removeIf(effect -> effect.uniqueId.equals(uniqueId));
+
+        if (removed) {
+            com.justheare.paperjjk_client.DebugConfig.log("RefractionEffectManager",
+                "Removed effect with ID: " + uniqueId + ". Total effects: " + effects.size());
+        } else {
+            com.justheare.paperjjk_client.DebugConfig.log("RefractionEffectManager",
+                "No effect found with ID: " + uniqueId);
+        }
+    }
+
+    /**
+     * Get effect by unique ID
+     */
+    public static RefractionEffect getEffectById(String uniqueId) {
+        for (RefractionEffect effect : effects) {
+            if (effect.uniqueId.equals(uniqueId)) {
+                return effect;
+            }
+        }
+        return null;
     }
 
     /**
@@ -156,8 +210,27 @@ public class RefractionEffectManager {
      * Update existing effect with new position and strength (with interpolation)
      * If no effect exists, creates a new one
      */
+    public static void updateEffect(Vec3d worldPos, float radius, float strength, String effectType, String uniqueId) {
+        // Find effect with matching unique ID
+        RefractionEffect targetEffect = getEffectById(uniqueId);
+
+        if (targetEffect == null) {
+            // No existing effect with this ID, create new one
+            addEffect(worldPos, radius, strength, effectType, uniqueId);
+        } else {
+            // Update existing effect
+            targetEffect.updateTarget(worldPos, strength);
+            targetEffect.radius = radius; // Update radius immediately
+        }
+    }
+
+    /**
+     * Legacy method for backward compatibility
+     * @deprecated Use updateEffect with uniqueId parameter instead
+     */
+    @Deprecated
     public static void updateEffect(Vec3d worldPos, float radius, float strength, String effectType) {
-        // Find effect of matching type
+        // Find first effect of matching type
         RefractionEffect targetEffect = null;
         for (RefractionEffect effect : effects) {
             if (effect.effectType.equals(effectType)) {
@@ -167,11 +240,12 @@ public class RefractionEffectManager {
         }
 
         if (targetEffect == null) {
-            // No existing effect of this type, create new one
+            // No existing effect of this type, create new one with generated ID
             addEffect(worldPos, radius, strength, effectType);
         } else {
-            // Update existing effect of this type
+            // Update existing effect
             targetEffect.updateTarget(worldPos, strength);
+            targetEffect.radius = radius;
         }
     }
 

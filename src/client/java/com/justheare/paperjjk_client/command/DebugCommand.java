@@ -114,15 +114,19 @@ public class DebugCommand {
         Vec3d lookVec = client.player.getRotationVec(1.0f);
         Vec3d effectPos = playerPos.add(lookVec.multiply(10));
 
-        com.justheare.paperjjk_client.DebugConfig.log("DebugCommand",
-            "Adding refraction effect at: " + String.format("(%.1f, %.1f, %.1f)", effectPos.x, effectPos.y, effectPos.z));
+        // Generate unique ID for this effect
+        String uniqueId = "DEBUG_" + System.currentTimeMillis() + "_" + System.nanoTime();
 
-        com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(effectPos, 0.3f, 1.0f, "DEBUG");
+        com.justheare.paperjjk_client.DebugConfig.log("DebugCommand",
+            "Adding refraction effect at: " + String.format("(%.1f, %.1f, %.1f)", effectPos.x, effectPos.y, effectPos.z) +
+            " with ID: " + uniqueId);
+
+        com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(effectPos, 0.3f, 1.0f, "DEBUG", uniqueId);
 
         com.justheare.paperjjk_client.DebugConfig.log("DebugCommand", "Effect added successfully");
 
         context.getSource().sendFeedback(
-            Text.literal("§d[PaperJJK Debug] §fAdded refraction effect at §e" +
+            Text.literal("§d[PaperJJK Debug] §fAdded refraction effect #" + uniqueId + " at §e" +
                 String.format("(%.1f, %.1f, %.1f)", effectPos.x, effectPos.y, effectPos.z))
         );
         return 1;
@@ -146,16 +150,19 @@ public class DebugCommand {
         // Get strength from command argument
         float strength = FloatArgumentType.getFloat(context, "strength");
 
+        // Generate unique ID for this effect
+        String uniqueId = "DEBUG_" + System.currentTimeMillis() + "_" + System.nanoTime();
+
         com.justheare.paperjjk_client.DebugConfig.log("DebugCommand",
             "Adding refraction effect at: " + String.format("(%.1f, %.1f, %.1f)", effectPos.x, effectPos.y, effectPos.z) +
-            " with strength: " + strength);
+            " with strength: " + strength + ", ID: " + uniqueId);
 
-        com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(effectPos, 0.3f, strength, "DEBUG");
+        com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(effectPos, 0.3f, strength, "DEBUG", uniqueId);
 
         com.justheare.paperjjk_client.DebugConfig.log("DebugCommand", "Effect added successfully");
 
         context.getSource().sendFeedback(
-                Text.literal("§d[PaperJJK Debug] §fAdded refraction effect at §e" +
+                Text.literal("§d[PaperJJK Debug] §fAdded refraction effect #" + uniqueId + " at §e" +
                         String.format("(%.1f, %.1f, %.1f)", effectPos.x, effectPos.y, effectPos.z) +
                         " §fwith strength §a" + String.format("%.2f", strength))
         );
