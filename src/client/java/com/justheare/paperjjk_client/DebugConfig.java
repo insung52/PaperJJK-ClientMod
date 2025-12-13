@@ -9,7 +9,7 @@ public class DebugConfig {
      * Master debug flag - set to true to enable all debug logging
      * Set to false to disable all debug output
      */
-    public static final boolean DEBUG_ENABLED = true;
+    public static final boolean DEBUG_ENABLED = false;
 
     /**
      * Debug log helper - only prints if DEBUG_ENABLED is true

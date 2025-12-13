@@ -683,22 +683,47 @@ public class CustomPostProcessing {
      */
     private static int getFramebufferTextureId(Framebuffer framebuffer) {
         try {
-            // Try multiple possible field names for color attachment
-            String[] possibleFieldNames = {"field_1475", "colorAttachment", "field_1469", "a", "colorTexture", "mainTexture"};
             Object colorAttachment = null;
+            String foundFieldName = null;
 
-            for (String fieldName : possibleFieldNames) {
-                try {
-                    java.lang.reflect.Field field = Framebuffer.class.getDeclaredField(fieldName);
+            // Strategy 1: Find by type (GpuTexture) - most reliable across versions
+            for (java.lang.reflect.Field field : Framebuffer.class.getDeclaredFields()) {
+                String fieldTypeName = field.getType().getName();
+
+                // Look for GpuTexture type (color attachment)
+                if (fieldTypeName.contains("GpuTexture") && !fieldTypeName.contains("GpuTextureView")) {
                     field.setAccessible(true);
-                    colorAttachment = field.get(framebuffer);
+                    Object fieldValue = field.get(framebuffer);
 
-                    com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
-                        "Found color attachment via field: " + fieldName);
-                    break;
-                } catch (NoSuchFieldException e) {
-                    com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
-                        "Field not found: " + fieldName);
+                    if (fieldValue != null) {
+                        colorAttachment = fieldValue;
+                        foundFieldName = field.getName();
+
+                        com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                            "Found GpuTexture field by type: " + foundFieldName + " (" + fieldTypeName + ")");
+                        break;
+                    }
+                }
+            }
+
+            // Strategy 2: Fallback to known field names if type search failed
+            if (colorAttachment == null) {
+                com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                    "Type-based search failed, trying known field names...");
+
+                String[] possibleFieldNames = {"field_1475", "colorAttachment", "field_1469", "a", "colorTexture", "mainTexture"};
+
+                for (String fieldName : possibleFieldNames) {
+                    try {
+                        java.lang.reflect.Field field = Framebuffer.class.getDeclaredField(fieldName);
+                        field.setAccessible(true);
+                        colorAttachment = field.get(framebuffer);
+                        foundFieldName = fieldName;
+
+                        com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                            "Found color attachment via fallback field: " + fieldName);
+                        break;
+                    } catch (NoSuchFieldException ignored) {}
                 }
             }
 
@@ -714,20 +739,41 @@ public class CustomPostProcessing {
                 return -1;
             }
 
-            // Try multiple possible method names for getting GL ID
-            String[] possibleMethodNames = {"iris$getGlId", "getGlId", "method_4624", "getId", "a", "b"};
+            // Now find the getGlId method
+            // Strategy 1: Try known method names first for performance
+            String[] knownMethodNames = {"iris$getGlId", "getGlId", "method_4624", "getId"};
 
-            for (String methodName : possibleMethodNames) {
+            for (String methodName : knownMethodNames) {
                 try {
                     java.lang.reflect.Method method = colorAttachment.getClass().getMethod(methodName);
-                    int textureId = (int) method.invoke(colorAttachment);
+                    if (method.getReturnType() == int.class || method.getReturnType() == Integer.class) {
+                        int textureId = (int) method.invoke(colorAttachment);
 
-                    com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
-                        "Got texture ID " + textureId + " via method: " + methodName);
-                    return textureId;
-                } catch (NoSuchMethodException e) {
-                    com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
-                        "Method not found: " + methodName);
+                        com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                            "Got texture ID " + textureId + " via known method: " + methodName);
+                        return textureId;
+                    }
+                } catch (NoSuchMethodException ignored) {}
+            }
+
+            // Strategy 2: Search for any method that returns int and has "id" in name
+            com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                "Known methods failed, searching for int-returning methods with 'id' in name...");
+
+            for (java.lang.reflect.Method method : colorAttachment.getClass().getMethods()) {
+                String methodName = method.getName().toLowerCase();
+                boolean returnsInt = method.getReturnType() == int.class || method.getReturnType() == Integer.class;
+                boolean hasNoParams = method.getParameterCount() == 0;
+                boolean hasIdInName = methodName.contains("id") || methodName.contains("gl");
+
+                if (returnsInt && hasNoParams && hasIdInName) {
+                    try {
+                        int textureId = (int) method.invoke(colorAttachment);
+
+                        com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                            "Got texture ID " + textureId + " via discovered method: " + method.getName());
+                        return textureId;
+                    } catch (Exception ignored) {}
                 }
             }
 
@@ -736,8 +782,10 @@ public class CustomPostProcessing {
 
             // Print all available methods for debugging
             for (java.lang.reflect.Method method : colorAttachment.getClass().getMethods()) {
-                com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
-                    "  - " + method.getName() + "()");
+                if (method.getParameterCount() == 0) {
+                    com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                        "  - " + method.getName() + "() -> " + method.getReturnType().getSimpleName());
+                }
             }
 
             return -1;
