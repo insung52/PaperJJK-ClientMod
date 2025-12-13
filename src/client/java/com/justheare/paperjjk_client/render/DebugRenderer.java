@@ -173,13 +173,11 @@ public class DebugRenderer {
      */
     private static void renderSphere(Matrix4f matrix, float radius, float r, float g, float b, float a,
                                      VertexConsumerProvider consumers, Vec3d cameraPos, Vec3d sphereCenter) {
-        // TODO: Fix RenderLayer for 1.21.11 - getDebugQuads() was removed
-        // Need to create custom RenderLayer or find alternative
-        // Temporarily disabled to allow compilation
-        return;
-        /*
         try {
-            VertexConsumer vertexConsumer = consumers.getBuffer(RenderLayer.getDebugQuads());
+            // Use simple translucent layer - will render with white texture
+            // We'll set UV to 0,0 to minimize texture visibility
+            // Use entity solid layer - UV at 0,0 should give us a solid white color
+            VertexConsumer vertexConsumer = consumers.getBuffer(TexturedRenderLayers.getEntitySolid());
 
             int segments = 32; // Number of divisions (higher = smoother)
 
@@ -219,11 +217,17 @@ public class DebugRenderer {
                     float nx3 = x3 / radius, ny3 = y3 / radius, nz3 = z3 / radius;
                     float nx4 = x4 / radius, ny4 = y4 / radius, nz4 = z4 / radius;
 
-                    // Draw as a quad (4 vertices in correct winding order)
-                    vertexConsumer.vertex(matrix, x1, y1, z1).color(r, g, b, a).normal(nx1, ny1, nz1);
-                    vertexConsumer.vertex(matrix, x2, y2, z2).color(r, g, b, a).normal(nx2, ny2, nz2);
-                    vertexConsumer.vertex(matrix, x3, y3, z3).color(r, g, b, a).normal(nx3, ny3, nz3);
-                    vertexConsumer.vertex(matrix, x4, y4, z4).color(r, g, b, a).normal(nx4, ny4, nz4);
+                    // Draw quad facing outward (normal winding)
+                    vertexConsumer.vertex(matrix, x1, y1, z1).color(r, g, b, a).texture(0, 0).overlay(0, 10).light(15728880).normal(nx1, ny1, nz1);
+                    vertexConsumer.vertex(matrix, x2, y2, z2).color(r, g, b, a).texture(0, 0).overlay(0, 10).light(15728880).normal(nx2, ny2, nz2);
+                    vertexConsumer.vertex(matrix, x3, y3, z3).color(r, g, b, a).texture(0, 0).overlay(0, 10).light(15728880).normal(nx3, ny3, nz3);
+                    vertexConsumer.vertex(matrix, x4, y4, z4).color(r, g, b, a).texture(0, 0).overlay(0, 10).light(15728880).normal(nx4, ny4, nz4);
+
+                    // Draw quad facing inward (reversed winding for double-sided rendering)
+                    vertexConsumer.vertex(matrix, x4, y4, z4).color(r, g, b, a).texture(0, 0).overlay(0, 10).light(15728880).normal(-nx4, -ny4, -nz4);
+                    vertexConsumer.vertex(matrix, x3, y3, z3).color(r, g, b, a).texture(0, 0).overlay(0, 10).light(15728880).normal(-nx3, -ny3, -nz3);
+                    vertexConsumer.vertex(matrix, x2, y2, z2).color(r, g, b, a).texture(0, 0).overlay(0, 10).light(15728880).normal(-nx2, -ny2, -nz2);
+                    vertexConsumer.vertex(matrix, x1, y1, z1).color(r, g, b, a).texture(0, 0).overlay(0, 10).light(15728880).normal(-nx1, -ny1, -nz1);
                 }
             }
 
@@ -231,7 +235,6 @@ public class DebugRenderer {
             System.err.println("[PaperJJK Debug] Error in renderSphere: " + e.getMessage());
             e.printStackTrace();
         }
-        */
     }
 
     /**
@@ -242,13 +245,10 @@ public class DebugRenderer {
                                            float baseR, float baseG, float baseB,
                                            VertexConsumerProvider consumers,
                                            Vec3d cameraPos, Vec3d sphereCenter) {
-        // TODO: Fix RenderLayer for 1.21.11 - getDebugQuads() was removed
-        // Need to create custom RenderLayer or find alternative
-        // Temporarily disabled to allow compilation
-        return;
-        /*
         try {
-            VertexConsumer vertexConsumer = consumers.getBuffer(RenderLayer.getDebugQuads());
+            // Use simple translucent layer
+            // Use entity solid layer - UV at 0,0 should give us a solid white color
+            VertexConsumer vertexConsumer = consumers.getBuffer(TexturedRenderLayers.getEntitySolid());
 
             int segments = 32;
 
@@ -285,11 +285,17 @@ public class DebugRenderer {
                     Vec3d local3 = v3.subtract(sphereCenter);
                     Vec3d local4 = v4.subtract(sphereCenter);
 
-                    // Draw quad with Fresnel-based colors
+                    // Draw quad with Fresnel-based colors (outward facing)
                     addFresnelVertex(vertexConsumer, matrix, local1, n1, f1, baseR, baseG, baseB);
                     addFresnelVertex(vertexConsumer, matrix, local2, n2, f2, baseR, baseG, baseB);
                     addFresnelVertex(vertexConsumer, matrix, local3, n3, f3, baseR, baseG, baseB);
                     addFresnelVertex(vertexConsumer, matrix, local4, n4, f4, baseR, baseG, baseB);
+
+                    // Draw quad reversed (inward facing) for double-sided rendering
+                    addFresnelVertex(vertexConsumer, matrix, local4, n4.negate(), f4, baseR, baseG, baseB);
+                    addFresnelVertex(vertexConsumer, matrix, local3, n3.negate(), f3, baseR, baseG, baseB);
+                    addFresnelVertex(vertexConsumer, matrix, local2, n2.negate(), f2, baseR, baseG, baseB);
+                    addFresnelVertex(vertexConsumer, matrix, local1, n1.negate(), f1, baseR, baseG, baseB);
                 }
             }
 
@@ -297,7 +303,6 @@ public class DebugRenderer {
             System.err.println("[PaperJJK Debug] Error in renderFresnelSphere: " + e.getMessage());
             e.printStackTrace();
         }
-        */
     }
 
     /**
@@ -341,9 +346,12 @@ public class DebugRenderer {
         // Alpha: edges more opaque, center more transparent
         float a = 0.3f + fresnel * 0.6f;
 
-        // Add vertex
+        // Add vertex with UV at 0,0 to minimize texture visibility
         consumer.vertex(matrix, (float)pos.x, (float)pos.y, (float)pos.z)
                 .color(r, g, b, a)
+                .texture(0, 0)
+                .overlay(0, 10)
+                .light(15728880)
                 .normal((float)normal.x, (float)normal.y, (float)normal.z);
     }
 
