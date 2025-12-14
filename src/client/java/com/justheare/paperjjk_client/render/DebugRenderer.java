@@ -22,6 +22,8 @@ public class DebugRenderer {
     private static boolean renderEffect2 = false;
     private static Vec3d effect1Position = null;
     private static Vec3d effect2Position = null;
+    private static boolean debuggedMethods = false;
+    private static RenderLayer translucentLayer = null;
 
     public static void toggleCube() {
         renderCube = !renderCube;
@@ -58,6 +60,80 @@ public class DebugRenderer {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.world == null) {
             return;
+        }
+
+        // Debug: Print all RenderLayer and TexturedRenderLayers methods once
+        if (!debuggedMethods) {
+            debuggedMethods = true;
+
+            System.out.println("[PaperJJK Debug] ========== RenderLayer Methods (all) ==========");
+            java.lang.reflect.Method[] renderLayerMethods = RenderLayer.class.getDeclaredMethods();
+            for (java.lang.reflect.Method method : renderLayerMethods) {
+                if (java.lang.reflect.Modifier.isStatic(method.getModifiers()) &&
+                    java.lang.reflect.Modifier.isPublic(method.getModifiers()) &&
+                    RenderLayer.class.isAssignableFrom(method.getReturnType())) {
+                    // Try to invoke methods with 0 parameters
+                    if (method.getParameterCount() == 0) {
+                        try {
+                            RenderLayer layer = (RenderLayer) method.invoke(null);
+                            System.out.println("[PaperJJK Debug]   " + method.getName() + " -> " + layer.toString());
+                        } catch (Exception e) {
+                            System.out.println("[PaperJJK Debug]   " + method.getName() + " -> (0 params, invoke failed)");
+                        }
+                    } else {
+                        System.out.println("[PaperJJK Debug]   " + method.getName() + " - params: " + method.getParameterCount());
+                    }
+                }
+            }
+
+            System.out.println("[PaperJJK Debug] ========== TexturedRenderLayers Methods ==========");
+            java.lang.reflect.Method[] texturedMethods = TexturedRenderLayers.class.getDeclaredMethods();
+            for (java.lang.reflect.Method method : texturedMethods) {
+                if (java.lang.reflect.Modifier.isStatic(method.getModifiers()) &&
+                    java.lang.reflect.Modifier.isPublic(method.getModifiers()) &&
+                    RenderLayer.class.isAssignableFrom(method.getReturnType())) {
+                    if (method.getParameterCount() == 0) {
+                        try {
+                            RenderLayer layer = (RenderLayer) method.invoke(null);
+                            System.out.println("[PaperJJK Debug]   " + method.getName() + " -> " + layer.toString());
+                        } catch (Exception e) {
+                            System.out.println("[PaperJJK Debug]   " + method.getName() + " -> ERROR: " + e.getMessage());
+                        }
+                    } else if (method.getName().equals("method_48480")) {
+                        System.out.println("[PaperJJK Debug]   method_48480 param type: " + method.getParameterTypes()[0].getName());
+                    }
+                }
+            }
+            System.out.println("[PaperJJK Debug] ========================================");
+
+            // Get translucent layer using reflection
+            try {
+                java.lang.reflect.Method method = TexturedRenderLayers.class.getDeclaredMethod("method_76545");
+                translucentLayer = (RenderLayer) method.invoke(null);
+                System.out.println("[PaperJJK Debug] Successfully got translucent layer: " + translucentLayer);
+            } catch (Exception e) {
+                System.err.println("[PaperJJK Debug] Failed to get translucent layer: " + e.getMessage());
+                e.printStackTrace();
+            }
+
+            // Search all RenderLayer static fields for debug layers
+            System.out.println("[PaperJJK Debug] ========== RenderLayer Static Fields ==========");
+            try {
+                java.lang.reflect.Field[] fields = RenderLayer.class.getDeclaredFields();
+                for (java.lang.reflect.Field field : fields) {
+                    if (java.lang.reflect.Modifier.isStatic(field.getModifiers()) &&
+                        RenderLayer.class.isAssignableFrom(field.getType())) {
+                        field.setAccessible(true);
+                        RenderLayer layer = (RenderLayer) field.get(null);
+                        System.out.println("[PaperJJK Debug]   " + field.getName() + " = " + layer);
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("[PaperJJK Debug] Failed to list fields: " + e.getMessage());
+            }
+            System.out.println("[PaperJJK Debug] ==========================================");
+
+            System.out.println("[PaperJJK Debug] Using translucent layer: " + translucentLayer);
         }
 
         Vec3d cameraPos = ((CameraAccessor) camera).getPos();
@@ -174,12 +250,13 @@ public class DebugRenderer {
     private static void renderSphere(Matrix4f matrix, float radius, float r, float g, float b, float a,
                                      VertexConsumerProvider consumers, Vec3d cameraPos, Vec3d sphereCenter) {
         try {
-            // Use simple translucent layer - will render with white texture
-            // We'll set UV to 0,0 to minimize texture visibility
-            // Use entity solid layer - UV at 0,0 should give us a solid white color
-            VertexConsumer vertexConsumer = consumers.getBuffer(TexturedRenderLayers.getEntitySolid());
+            // Use translucent layer obtained via reflection
+            RenderLayer layer = (translucentLayer != null) ? translucentLayer : TexturedRenderLayers.getEntitySolid();
+            System.out.println("[PaperJJK Debug] renderSphere called: radius=" + radius + ", color=(" + r + "," + g + "," + b + "," + a + "), layer=" + (translucentLayer != null ? "TRANSLUCENT" : "SOLID"));
+            VertexConsumer vertexConsumer = consumers.getBuffer(layer);
 
             int segments = 32; // Number of divisions (higher = smoother)
+            int vertexCount = 0;
 
             // Draw sphere as quads (latitude by latitude)
             for (int lat = 0; lat < segments; lat++) {
@@ -218,18 +295,25 @@ public class DebugRenderer {
                     float nx4 = x4 / radius, ny4 = y4 / radius, nz4 = z4 / radius;
 
                     // Draw quad facing outward (normal winding)
-                    vertexConsumer.vertex(matrix, x1, y1, z1).color(r, g, b, a).texture(0, 0).overlay(0, 10).light(15728880).normal(nx1, ny1, nz1);
-                    vertexConsumer.vertex(matrix, x2, y2, z2).color(r, g, b, a).texture(0, 0).overlay(0, 10).light(15728880).normal(nx2, ny2, nz2);
-                    vertexConsumer.vertex(matrix, x3, y3, z3).color(r, g, b, a).texture(0, 0).overlay(0, 10).light(15728880).normal(nx3, ny3, nz3);
-                    vertexConsumer.vertex(matrix, x4, y4, z4).color(r, g, b, a).texture(0, 0).overlay(0, 10).light(15728880).normal(nx4, ny4, nz4);
+                    // Use constant UV (1/16, 1/16) - center of first tile in atlas
+                    float u = 1.0f / 16.0f;
+                    float v = 1.0f / 16.0f;
+                    vertexConsumer.vertex(matrix, x1, y1, z1).color(r, g, b, a).texture(u, v).overlay(OverlayTexture.DEFAULT_UV).light(15728880).normal(nx1, ny1, nz1);
+                    vertexConsumer.vertex(matrix, x2, y2, z2).color(r, g, b, a).texture(u, v).overlay(OverlayTexture.DEFAULT_UV).light(15728880).normal(nx2, ny2, nz2);
+                    vertexConsumer.vertex(matrix, x3, y3, z3).color(r, g, b, a).texture(u, v).overlay(OverlayTexture.DEFAULT_UV).light(15728880).normal(nx3, ny3, nz3);
+                    vertexConsumer.vertex(matrix, x4, y4, z4).color(r, g, b, a).texture(u, v).overlay(OverlayTexture.DEFAULT_UV).light(15728880).normal(nx4, ny4, nz4);
 
                     // Draw quad facing inward (reversed winding for double-sided rendering)
-                    vertexConsumer.vertex(matrix, x4, y4, z4).color(r, g, b, a).texture(0, 0).overlay(0, 10).light(15728880).normal(-nx4, -ny4, -nz4);
-                    vertexConsumer.vertex(matrix, x3, y3, z3).color(r, g, b, a).texture(0, 0).overlay(0, 10).light(15728880).normal(-nx3, -ny3, -nz3);
-                    vertexConsumer.vertex(matrix, x2, y2, z2).color(r, g, b, a).texture(0, 0).overlay(0, 10).light(15728880).normal(-nx2, -ny2, -nz2);
-                    vertexConsumer.vertex(matrix, x1, y1, z1).color(r, g, b, a).texture(0, 0).overlay(0, 10).light(15728880).normal(-nx1, -ny1, -nz1);
+                    vertexConsumer.vertex(matrix, x4, y4, z4).color(r, g, b, a).texture(u, v).overlay(OverlayTexture.DEFAULT_UV).light(15728880).normal(-nx4, -ny4, -nz4);
+                    vertexConsumer.vertex(matrix, x3, y3, z3).color(r, g, b, a).texture(u, v).overlay(OverlayTexture.DEFAULT_UV).light(15728880).normal(-nx3, -ny3, -nz3);
+                    vertexConsumer.vertex(matrix, x2, y2, z2).color(r, g, b, a).texture(u, v).overlay(OverlayTexture.DEFAULT_UV).light(15728880).normal(-nx2, -ny2, -nz2);
+                    vertexConsumer.vertex(matrix, x1, y1, z1).color(r, g, b, a).texture(u, v).overlay(OverlayTexture.DEFAULT_UV).light(15728880).normal(-nx1, -ny1, -nz1);
+
+                    vertexCount += 8; // 8 vertices per quad (4 outward + 4 inward)
                 }
             }
+
+            System.out.println("[PaperJJK Debug] renderSphere finished: added " + vertexCount + " vertices");
 
         } catch (Exception e) {
             System.err.println("[PaperJJK Debug] Error in renderSphere: " + e.getMessage());
@@ -246,9 +330,9 @@ public class DebugRenderer {
                                            VertexConsumerProvider consumers,
                                            Vec3d cameraPos, Vec3d sphereCenter) {
         try {
-            // Use simple translucent layer
-            // Use entity solid layer - UV at 0,0 should give us a solid white color
-            VertexConsumer vertexConsumer = consumers.getBuffer(TexturedRenderLayers.getEntitySolid());
+            // Use translucent layer obtained via reflection
+            RenderLayer layer = (translucentLayer != null) ? translucentLayer : TexturedRenderLayers.getEntitySolid();
+            VertexConsumer vertexConsumer = consumers.getBuffer(layer);
 
             int segments = 32;
 
@@ -346,11 +430,11 @@ public class DebugRenderer {
         // Alpha: edges more opaque, center more transparent
         float a = 0.3f + fresnel * 0.6f;
 
-        // Add vertex with UV at 0,0 to minimize texture visibility
+        // Add vertex with UV at center of first tile
         consumer.vertex(matrix, (float)pos.x, (float)pos.y, (float)pos.z)
                 .color(r, g, b, a)
-                .texture(0, 0)
-                .overlay(0, 10)
+                .texture(1.0f / 16.0f, 1.0f / 16.0f)
+                .overlay(OverlayTexture.DEFAULT_UV)
                 .light(15728880)
                 .normal((float)normal.x, (float)normal.y, (float)normal.z);
     }
