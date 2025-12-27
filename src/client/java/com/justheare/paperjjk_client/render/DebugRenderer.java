@@ -252,10 +252,20 @@ public class DebugRenderer {
         try {
             // Use translucent layer obtained via reflection
             RenderLayer layer = (translucentLayer != null) ? translucentLayer : TexturedRenderLayers.getEntitySolid();
-            System.out.println("[PaperJJK Debug] renderSphere called: radius=" + radius + ", color=(" + r + "," + g + "," + b + "," + a + "), layer=" + (translucentLayer != null ? "TRANSLUCENT" : "SOLID"));
+            if (radius > 10) {
+                System.out.println("[PaperJJK Debug] renderSphere with animated UV: radius=" + radius);
+            }
             VertexConsumer vertexConsumer = consumers.getBuffer(layer);
 
-            int segments = 32; // Number of divisions (higher = smoother)
+            // Get game time for UV animation (creates flowing/shimmering effect)
+            MinecraftClient client = MinecraftClient.getInstance();
+            float time = client.world != null ? client.world.getTime() : 0;
+
+            // Create slow scrolling UV offset - makes stripes "flow" like smoke/energy
+            float uvOffsetU = (time * 0.02f) % 1.0f;
+            float uvOffsetV = (time * 0.015f) % 1.0f;
+
+            int segments = 32;
             int vertexCount = 0;
 
             // Draw sphere as quads (latitude by latitude)
@@ -268,22 +278,18 @@ public class DebugRenderer {
                     float phi2 = (float) ((lon + 1) * 2 * Math.PI / segments);
 
                     // Calculate 4 vertices of the quad
-                    // v1: (theta1, phi1)
                     float x1 = radius * (float) Math.sin(theta1) * (float) Math.cos(phi1);
                     float y1 = radius * (float) Math.cos(theta1);
                     float z1 = radius * (float) Math.sin(theta1) * (float) Math.sin(phi1);
 
-                    // v2: (theta2, phi1)
                     float x2 = radius * (float) Math.sin(theta2) * (float) Math.cos(phi1);
                     float y2 = radius * (float) Math.cos(theta2);
                     float z2 = radius * (float) Math.sin(theta2) * (float) Math.sin(phi1);
 
-                    // v3: (theta2, phi2)
                     float x3 = radius * (float) Math.sin(theta2) * (float) Math.cos(phi2);
                     float y3 = radius * (float) Math.cos(theta2);
                     float z3 = radius * (float) Math.sin(theta2) * (float) Math.sin(phi2);
 
-                    // v4: (theta1, phi2)
                     float x4 = radius * (float) Math.sin(theta1) * (float) Math.cos(phi2);
                     float y4 = radius * (float) Math.cos(theta1);
                     float z4 = radius * (float) Math.sin(theta1) * (float) Math.sin(phi2);
@@ -294,10 +300,15 @@ public class DebugRenderer {
                     float nx3 = x3 / radius, ny3 = y3 / radius, nz3 = z3 / radius;
                     float nx4 = x4 / radius, ny4 = y4 / radius, nz4 = z4 / radius;
 
-                    // Draw quad facing outward (normal winding)
-                    // Use constant UV (1/16, 1/16) - center of first tile in atlas
-                    float u = 1.0f / 16.0f;
-                    float v = 1.0f / 16.0f;
+                    // Animated UV - scrolls slowly to create flowing smoke/energy effect
+                    // Add some variation per quad to create turbulence
+                    float noiseU = (float) Math.sin(theta1 + phi1) * 0.05f;
+                    float noiseV = (float) Math.cos(theta1 * 2 + phi1 * 3) * 0.05f;
+
+                    float u = (0.5f + uvOffsetU + noiseU) % 1.0f;
+                    float v = (0.5f + uvOffsetV + noiseV) % 1.0f;
+
+                    // Draw quad facing outward - animated UV creates flowing pattern
                     vertexConsumer.vertex(matrix, x1, y1, z1).color(r, g, b, a).texture(u, v).overlay(OverlayTexture.DEFAULT_UV).light(15728880).normal(nx1, ny1, nz1);
                     vertexConsumer.vertex(matrix, x2, y2, z2).color(r, g, b, a).texture(u, v).overlay(OverlayTexture.DEFAULT_UV).light(15728880).normal(nx2, ny2, nz2);
                     vertexConsumer.vertex(matrix, x3, y3, z3).color(r, g, b, a).texture(u, v).overlay(OverlayTexture.DEFAULT_UV).light(15728880).normal(nx3, ny3, nz3);
@@ -309,11 +320,13 @@ public class DebugRenderer {
                     vertexConsumer.vertex(matrix, x2, y2, z2).color(r, g, b, a).texture(u, v).overlay(OverlayTexture.DEFAULT_UV).light(15728880).normal(-nx2, -ny2, -nz2);
                     vertexConsumer.vertex(matrix, x1, y1, z1).color(r, g, b, a).texture(u, v).overlay(OverlayTexture.DEFAULT_UV).light(15728880).normal(-nx1, -ny1, -nz1);
 
-                    vertexCount += 8; // 8 vertices per quad (4 outward + 4 inward)
+                    vertexCount += 8;
                 }
             }
 
-            System.out.println("[PaperJJK Debug] renderSphere finished: added " + vertexCount + " vertices");
+            if (radius > 10) {
+                System.out.println("[PaperJJK Debug] renderSphere finished: " + vertexCount + " vertices with flowing UV animation");
+            }
 
         } catch (Exception e) {
             System.err.println("[PaperJJK Debug] Error in renderSphere: " + e.getMessage());
