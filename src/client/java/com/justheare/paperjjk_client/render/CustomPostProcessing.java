@@ -123,6 +123,11 @@ public class CustomPostProcessing {
                    // Negative strength: pushes away from center (AKA - repulsion)
                    float distortAmount = uEffectStrength * 0.05 * falloff / dist;
 
+                   // AO (blue) has half distortion strength (range stays same)
+                   if (uEffectType == 0) {
+                       distortAmount *= 0.2;
+                   }
+
                    // Apply distortion: move sample point
                    sampleCoord = texCoord + toCenter * distortAmount;
 
@@ -148,11 +153,16 @@ public class CustomPostProcessing {
 
                 // Bloom effect - color depends on strength sign
                 // Enhanced bloom: Soft Edge + Spiral + Noise
-                if (dist < effectRadius * 1.2) {  // 1.2x for soft edge fade
+                // AO (blue) uses smaller bloom radius (0.6x instead of 1.2x)
+                float bloomRadiusMultiplier = (uEffectType == 0) ? 0.4 : 1.2;
+
+                if (dist < effectRadius * bloomRadiusMultiplier) {
                     float normalizedDist = dist / effectRadius;
 
                     // A: Soft Edge - smooth fade at boundary
-                    float edgeFade = 1.0 - smoothstep(0.8, 1.2, normalizedDist);
+                    // Scale fade range to match bloomRadiusMultiplier
+                    float fadeStart = 0.8 * bloomRadiusMultiplier / 1.2;  // AO: 0.4, AKA: 0.8
+                    float edgeFade = 1.0 - smoothstep(fadeStart, bloomRadiusMultiplier, normalizedDist);
 
                     // Base bloom intensity scaled by absolute strength
                     float bloomFactor = exp(-normalizedDist * 4.0) * 5.0 * absStrength;
@@ -168,6 +178,11 @@ public class CustomPostProcessing {
 
                     // Apply soft edge fade
                     bloomFactor *= edgeFade;
+
+                    // AO (blue) bloom is half intensity
+                    if (uEffectType == 0) {
+                        bloomFactor *= 0.5;
+                    }
 
                     // Bloom color depends on effect type
                     vec3 bloomColor;
