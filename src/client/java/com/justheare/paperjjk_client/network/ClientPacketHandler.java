@@ -393,6 +393,9 @@ public class ClientPacketHandler {
                 String uniqueId = readUTF(buf);
 
                 client.execute(() -> {
+                    // Remove existing AKA effect with same ID (in case of collision)
+                    com.justheare.paperjjk_client.shader.RefractionEffectManager.removeEffectById(uniqueId);
+
                     net.minecraft.util.math.Vec3d position = new net.minecraft.util.math.Vec3d(x, y, z);
                     com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(
                         position,
@@ -437,6 +440,12 @@ public class ClientPacketHandler {
                 String uniqueId = readUTF(buf);
 
                 client.execute(() -> {
+                    // CRITICAL FIX: Remove existing AKA effect with same ID
+                    // When AKA collides with AO to become MURASAKI, the ID stays the same (INFINITY_AKA_...)
+                    // This causes red AKA sphere to overlap and hide purple MURASAKI sphere
+                    com.justheare.paperjjk_client.shader.RefractionEffectManager.removeEffectById(uniqueId);
+                    LOGGER.info("[Infinity Murasaki] Removed existing AKA effect with id={}", uniqueId);
+
                     net.minecraft.util.math.Vec3d position = new net.minecraft.util.math.Vec3d(x, y, z);
                     // Use radius as both radius and strength for explosion
                     com.justheare.paperjjk_client.shader.RefractionEffectManager.addEffect(
