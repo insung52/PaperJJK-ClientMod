@@ -102,8 +102,8 @@ public class SkillDetailScreen extends Screen {
         // Wrap description text
         wrapText(context, skillInfo.description, centerX - 120, startY + 55, 240);
 
-        // Required CE
-        String ceText = "§b필요 주력량: §f" + skillInfo.requiredCE;
+        // Required CE (now as text from server)
+        String ceText = "§b주력 소모량: §f" + skillInfo.requiredCE;
         context.drawText(
             this.textRenderer,
             Text.literal(ceText),
@@ -112,43 +112,43 @@ public class SkillDetailScreen extends Screen {
             0xFFFFFFFF,
             true
         );
-
-        // Cooldown
-        String cooldownText = "§c쿨타임: §f" + skillInfo.cooldown + "초";
-        context.drawText(
-            this.textRenderer,
-            Text.literal(cooldownText),
-            centerX - 120,
-            startY + 150,
-            0xFFFFFFFF,
-            true
-        );
-
-        // Type
-        String typeText = "§d타입: §f" + skillInfo.type;
-        context.drawText(
-            this.textRenderer,
-            Text.literal(typeText),
-            centerX - 120,
-            startY + 170,
-            0xFFFFFFFF,
-            true
-        );
     }
 
     /**
-     * Wrap text to fit within width
+     * Wrap text to fit within width, supporting \n for manual line breaks
      */
     private void wrapText(DrawContext context, String text, int x, int y, int maxWidth) {
-        String[] words = text.split(" ");
-        StringBuilder line = new StringBuilder();
+        // First split by manual line breaks (\n)
+        String[] lines = text.split("\\n");
         int currentY = y;
 
-        for (String word : words) {
-            String testLine = line.length() == 0 ? word : line + " " + word;
+        for (String paragraph : lines) {
+            // Then word-wrap each line
+            String[] words = paragraph.split(" ");
+            StringBuilder line = new StringBuilder();
 
-            if (this.textRenderer.getWidth(testLine) > maxWidth) {
-                // Draw current line and start new one
+            for (String word : words) {
+                String testLine = line.length() == 0 ? word : line + " " + word;
+
+                if (this.textRenderer.getWidth(testLine) > maxWidth) {
+                    // Draw current line and start new one
+                    context.drawText(
+                        this.textRenderer,
+                        Text.literal(line.toString()),
+                        x,
+                        currentY,
+                        0xFFFFFFFF,
+                        true
+                    );
+                    line = new StringBuilder(word);
+                    currentY += 12; // Line height
+                } else {
+                    line = new StringBuilder(testLine);
+                }
+            }
+
+            // Draw last line of paragraph
+            if (line.length() > 0) {
                 context.drawText(
                     this.textRenderer,
                     Text.literal(line.toString()),
@@ -157,23 +157,10 @@ public class SkillDetailScreen extends Screen {
                     0xFFFFFFFF,
                     true
                 );
-                line = new StringBuilder(word);
-                currentY += 12; // Line height
-            } else {
-                line = new StringBuilder(testLine);
             }
-        }
 
-        // Draw last line
-        if (line.length() > 0) {
-            context.drawText(
-                this.textRenderer,
-                Text.literal(line.toString()),
-                x,
-                currentY,
-                0xFFFFFFFF,
-                true
-            );
+            // Move to next line for manual line break
+            currentY += 12;
         }
     }
 

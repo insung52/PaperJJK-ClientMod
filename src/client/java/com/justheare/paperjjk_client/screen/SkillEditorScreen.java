@@ -174,77 +174,19 @@ public class SkillEditorScreen extends Screen {
     }
 
     /**
-     * Get available skills based on player's naturaltech
+     * Get available skills based on player's naturaltech (from server)
      */
     private List<String> getAvailableSkills() {
-        String naturaltech = PlayerData.getNaturaltech();
         List<String> skills = new ArrayList<>();
 
         // Always add "없음" option
         skills.add("없음");
 
-        // Add skills based on naturaltech
-        if (naturaltech == null || naturaltech.isEmpty()) {
-            LOGGER.info("[Skill Editor] No naturaltech found, only 없음 available");
-            return skills;
-        }
+        // Get skills from server data (PlayerData)
+        List<String> serverSkills = PlayerData.getAvailableSkills();
+        skills.addAll(serverSkills);
 
-        // Add naturaltech-specific skills
-        // Format: naturaltech_skillname (e.g., "infinity_ao", "infinity_aka", etc.)
-        switch (naturaltech) {
-            case "infinity":
-                skills.add("infinity_ao");
-                skills.add("infinity_aka");
-                skills.add("infinity_murasaki");
-                skills.add("infinity_hollow_purple");
-                break;
-            case "10s":
-                skills.add("10s_divine_dogs");
-                skills.add("10s_nue");
-                skills.add("10s_great_serpent");
-                skills.add("10s_toad");
-                skills.add("10s_rabbit_escape");
-                skills.add("10s_max_elephant");
-                skills.add("10s_piercing_ox");
-                skills.add("10s_tiger_funeral");
-                skills.add("10s_mahoraga");
-                skills.add("10s_agito");
-                break;
-            case "construction":
-                skills.add("construction_create");
-                skills.add("construction_seal");
-                break;
-            case "cursed_speech":
-                skills.add("cursed_speech_stop");
-                skills.add("cursed_speech_crush");
-                skills.add("cursed_speech_explode");
-                skills.add("cursed_speech_die");
-                break;
-            case "projection_sorcery":
-                skills.add("projection_sorcery_activate");
-                break;
-            case "idle_transfiguration":
-                skills.add("idle_transfiguration_touch");
-                skills.add("idle_transfiguration_transform");
-                break;
-            case "shrine":
-                skills.add("shrine_dismantle");
-                skills.add("shrine_cleave");
-                skills.add("shrine_fire_arrow");
-                break;
-            case "comedian":
-                skills.add("comedian_activate");
-                break;
-            case "star_rage":
-                skills.add("star_rage_punch");
-                skills.add("star_rage_mass");
-                break;
-            default:
-                LOGGER.info("[Skill Editor] Unknown naturaltech: {}, only 없음 available", naturaltech);
-                break;
-        }
-
-        LOGGER.info("[Skill Editor] Available skills for {}: {}", naturaltech, skills);
+        LOGGER.info("[Skill Editor] Available skills from server: {}", skills);
         return skills;
     }
 

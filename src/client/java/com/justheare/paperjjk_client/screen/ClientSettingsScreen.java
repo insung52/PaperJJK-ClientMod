@@ -165,6 +165,16 @@ public class ClientSettingsScreen extends Screen {
         PlayerData.setPostProcessingEnabled(postProcessingEnabled);
         PlayerData.setDomainEffectsEnabled(domainEffectsEnabled);
 
+        // Apply post-processing setting immediately
+        if (!postProcessingEnabled) {
+            // Disable post-processing by clearing any active effects
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client != null && client.gameRenderer != null) {
+                client.gameRenderer.clearPostProcessor();
+                LOGGER.info("[Client Settings] Cleared post-processor (disabled)");
+            }
+        }
+
         // Optionally send to server (for future server-side tracking)
         sendClientSettingsUpdate();
 

@@ -522,14 +522,24 @@ public class ClientPacketHandler {
         String slot3 = readUTF(buf);
         String slot4 = readUTF(buf);
 
+        // Read available skills
+        int skillCount = buf.readInt();
+        java.util.List<String> availableSkills = new java.util.ArrayList<>();
+        for (int i = 0; i < skillCount; i++) {
+            availableSkills.add(readUTF(buf));
+        }
+
         client.execute(() -> {
             com.justheare.paperjjk_client.data.PlayerData.updatePlayerInfo(
                 naturaltech, curseEnergy, maxCurseEnergy, hasRCT, domainLevel,
                 slot1, slot2, slot3, slot4
             );
 
-            LOGGER.info("[Player Info] Updated: tech={}, CE={}/{}, RCT={}, domain={}",
-                naturaltech, curseEnergy, maxCurseEnergy, hasRCT, domainLevel);
+            // Update available skills
+            com.justheare.paperjjk_client.data.PlayerData.setAvailableSkills(availableSkills);
+
+            LOGGER.info("[Player Info] Updated: tech={}, CE={}/{}, RCT={}, domain={}, skills={}",
+                naturaltech, curseEnergy, maxCurseEnergy, hasRCT, domainLevel, availableSkills);
 
             // Update current screen if it's the player info screen
             if (client.currentScreen instanceof com.justheare.paperjjk_client.screen.PlayerInfoScreen playerInfoScreen) {
@@ -540,21 +550,18 @@ public class ClientPacketHandler {
 
     /**
      * SKILL_INFO_RESPONSE (0x1B) - Skill description response
-     * Packet format: [packetId(1)] [skillId(UTF)] [displayName(UTF)] [description(UTF)]
-     *                [requiredCE(int)] [cooldown(int)] [type(UTF)]
+     * Packet format: [packetId(1)] [skillId(UTF)] [displayName(UTF)] [description(UTF)] [requiredCE(UTF)]
      */
     private static void handleSkillInfoResponse(MinecraftClient client, PacketByteBuf buf) {
         String skillId = readUTF(buf);
         String displayName = readUTF(buf);
         String description = readUTF(buf);
-        int requiredCE = buf.readInt();
-        int cooldown = buf.readInt();
-        String type = readUTF(buf);
+        String requiredCE = readUTF(buf);
 
         client.execute(() -> {
             com.justheare.paperjjk_client.data.PlayerData.SkillInfo skillInfo =
                 new com.justheare.paperjjk_client.data.PlayerData.SkillInfo(
-                    skillId, displayName, description, requiredCE, cooldown, type
+                    skillId, displayName, description, requiredCE
                 );
 
             com.justheare.paperjjk_client.data.PlayerData.updateSkillInfo(skillInfo);

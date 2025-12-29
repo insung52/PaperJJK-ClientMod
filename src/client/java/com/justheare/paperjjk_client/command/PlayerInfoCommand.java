@@ -16,15 +16,15 @@ import org.slf4j.LoggerFactory;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
 
 /**
- * Client-side /jjk command
- * Usage: /jjk - Opens player info screen
+ * Client-side /jjkhelp command
+ * Usage: /jjkhelp - Opens player info screen
  */
 public class PlayerInfoCommand {
     private static final Logger LOGGER = LoggerFactory.getLogger("PaperJJK-PlayerInfoCommand");
 
     public static void register(CommandDispatcher<FabricClientCommandSource> dispatcher) {
         dispatcher.register(
-            literal("jjk")
+            literal("jjkhelp")
                 .executes(context -> {
                     MinecraftClient client = MinecraftClient.getInstance();
 
@@ -54,11 +54,11 @@ public class PlayerInfoCommand {
                         client.setScreen(new PlayerInfoScreen(client.currentScreen));
                     });
 
-                    LOGGER.info("[/jjk Command] Opened player info screen");
+                    LOGGER.info("[/jjkhelp Command] Opened player info screen");
                     return 1;
                 })
         );
 
-        LOGGER.info("[PlayerInfoCommand] Registered /jjk command");
+        LOGGER.info("[PlayerInfoCommand] Registered /jjkhelp command");
     }
 }

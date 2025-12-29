@@ -26,6 +26,12 @@ public class GameRendererMixin {
             return;
         }
 
+        // Check if post-processing is enabled in settings
+        if (!com.justheare.paperjjk_client.data.PlayerData.isPostProcessingEnabled()) {
+            com.justheare.paperjjk_client.DebugConfig.log("GameRendererMixin", "Skipping: post-processing disabled in settings");
+            return;
+        }
+
         // Tick all effects for interpolation
         com.justheare.paperjjk_client.shader.RefractionEffectManager.tickEffects();
 

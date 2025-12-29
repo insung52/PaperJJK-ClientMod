@@ -58,6 +58,13 @@ public class DynamicPostEffectManager {
         GameRenderer renderer = client.gameRenderer;
         if (renderer == null) return;
 
+        // Check if post-processing is enabled in settings
+        if (!com.justheare.paperjjk_client.data.PlayerData.isPostProcessingEnabled()) {
+            // Clear any active post-processor if disabled
+            renderer.clearPostProcessor();
+            return;
+        }
+
         // Check if our shader is currently active
         Identifier currentId = renderer.getPostProcessorId();
         if (currentId != null && currentId.equals(REFRACTION_SHADER)) {

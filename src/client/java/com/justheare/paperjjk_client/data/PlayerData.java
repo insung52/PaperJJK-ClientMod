@@ -22,6 +22,9 @@ public class PlayerData {
     // Skill descriptions cache
     private static final Map<String, SkillInfo> skillCache = new HashMap<>();
 
+    // Available skills for player's naturaltech
+    private static java.util.List<String> availableSkills = new java.util.ArrayList<>();
+
     // Client settings (stored client-side)
     private static boolean postProcessingEnabled = true;
     private static boolean domainEffectsEnabled = true;
@@ -64,6 +67,15 @@ public class PlayerData {
         return skillCache.get(skillId);
     }
 
+    // Available skills
+    public static java.util.List<String> getAvailableSkills() {
+        return new java.util.ArrayList<>(availableSkills);
+    }
+
+    public static void setAvailableSkills(java.util.List<String> skills) {
+        availableSkills = new java.util.ArrayList<>(skills);
+    }
+
     // Client settings
     public static boolean isPostProcessingEnabled() { return postProcessingEnabled; }
     public static void setPostProcessingEnabled(boolean enabled) { postProcessingEnabled = enabled; }
@@ -78,18 +90,13 @@ public class PlayerData {
         public final String skillId;
         public final String displayName;
         public final String description;
-        public final int requiredCE;
-        public final int cooldown;
-        public final String type;
+        public final String requiredCE;
 
-        public SkillInfo(String skillId, String displayName, String description,
-                        int requiredCE, int cooldown, String type) {
+        public SkillInfo(String skillId, String displayName, String description, String requiredCE) {
             this.skillId = skillId;
             this.displayName = displayName;
             this.description = description;
             this.requiredCE = requiredCE;
-            this.cooldown = cooldown;
-            this.type = type;
         }
     }
 }
