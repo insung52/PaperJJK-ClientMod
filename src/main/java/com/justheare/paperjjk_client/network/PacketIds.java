@@ -16,6 +16,10 @@ public class PacketIds {
     public static final byte SKILL_DISTANCE = 0x09;         // Adjust skill spawn distance (scroll)
     public static final byte DOMAIN_EXPANSION = 0x08;       // Domain expansion start/end
     public static final byte DOMAIN_SETTINGS = 0x0A;        // Domain settings update/request
+    public static final byte PLAYER_INFO_REQUEST = 0x0B;    // Player info request (naturaltech, CE, etc)
+    public static final byte SKILL_INFO_REQUEST = 0x0C;     // Skill description request
+    public static final byte SKILL_BINDING_UPDATE = 0x0D;   // Skill slot binding update
+    public static final byte CLIENT_SETTINGS_UPDATE = 0x0E; // Client settings update
 
     // Server → Client
     public static final byte TECHNIQUE_FEEDBACK = 0x10;     // Technique success/failure feedback
@@ -28,6 +32,8 @@ public class PacketIds {
     public static final byte INFINITY_AO = 0x17;            // Infinity Ao (refraction effect sync)
     public static final byte INFINITY_AKA = 0x18;           // Infinity Aka (red expansion effect sync)
     public static final byte INFINITY_MURASAKI = 0x19;      // Infinity Murasaki (purple expansion effect sync)
+    public static final byte PLAYER_INFO_RESPONSE = 0x1A;   // Player info response
+    public static final byte SKILL_INFO_RESPONSE = 0x1B;    // Skill description response
 
     // Bidirectional
     public static final byte HANDSHAKE = 0x20;

@@ -52,6 +52,8 @@ public class ClientPacketHandler {
                         case PacketIds.INFINITY_AO -> handleInfinityAo(context.client(), buf);
                         case PacketIds.INFINITY_AKA -> handleInfinityAka(context.client(), buf);
                         case PacketIds.INFINITY_MURASAKI -> handleInfinityMurasaki(context.client(), buf);
+                        case PacketIds.PLAYER_INFO_RESPONSE -> handlePlayerInfoResponse(context.client(), buf);
+                        case PacketIds.SKILL_INFO_RESPONSE -> handleSkillInfoResponse(context.client(), buf);
                         case PacketIds.HANDSHAKE -> handleHandshake(context.client(), buf);
                         default -> LOGGER.warn("Unknown packet ID: 0x{}", String.format("%02X", packetId));
                     }
@@ -500,6 +502,71 @@ public class ClientPacketHandler {
             LOGGER.info("Server handshake received: protocol={}, version={}, features=0x{}",
                 version, modVersion, String.format("%02X", features));
             // TODO: Version compatibility check
+        });
+    }
+
+    /**
+     * PLAYER_INFO_RESPONSE (0x1A) - Player info response
+     * Packet format: [packetId(1)] [naturaltech(UTF)] [curseenergy(int)] [maxCE(int)]
+     *                [hasRCT(boolean)] [domainLevel(int)]
+     *                [slot1(UTF)] [slot2(UTF)] [slot3(UTF)] [slot4(UTF)]
+     */
+    private static void handlePlayerInfoResponse(MinecraftClient client, PacketByteBuf buf) {
+        String naturaltech = readUTF(buf);
+        int curseEnergy = buf.readInt();
+        int maxCurseEnergy = buf.readInt();
+        boolean hasRCT = buf.readBoolean();
+        int domainLevel = buf.readInt();
+        String slot1 = readUTF(buf);
+        String slot2 = readUTF(buf);
+        String slot3 = readUTF(buf);
+        String slot4 = readUTF(buf);
+
+        client.execute(() -> {
+            com.justheare.paperjjk_client.data.PlayerData.updatePlayerInfo(
+                naturaltech, curseEnergy, maxCurseEnergy, hasRCT, domainLevel,
+                slot1, slot2, slot3, slot4
+            );
+
+            LOGGER.info("[Player Info] Updated: tech={}, CE={}/{}, RCT={}, domain={}",
+                naturaltech, curseEnergy, maxCurseEnergy, hasRCT, domainLevel);
+
+            // Update current screen if it's the player info screen
+            if (client.currentScreen instanceof com.justheare.paperjjk_client.screen.PlayerInfoScreen playerInfoScreen) {
+                playerInfoScreen.refresh();
+            }
+        });
+    }
+
+    /**
+     * SKILL_INFO_RESPONSE (0x1B) - Skill description response
+     * Packet format: [packetId(1)] [skillId(UTF)] [displayName(UTF)] [description(UTF)]
+     *                [requiredCE(int)] [cooldown(int)] [type(UTF)]
+     */
+    private static void handleSkillInfoResponse(MinecraftClient client, PacketByteBuf buf) {
+        String skillId = readUTF(buf);
+        String displayName = readUTF(buf);
+        String description = readUTF(buf);
+        int requiredCE = buf.readInt();
+        int cooldown = buf.readInt();
+        String type = readUTF(buf);
+
+        client.execute(() -> {
+            com.justheare.paperjjk_client.data.PlayerData.SkillInfo skillInfo =
+                new com.justheare.paperjjk_client.data.PlayerData.SkillInfo(
+                    skillId, displayName, description, requiredCE, cooldown, type
+                );
+
+            com.justheare.paperjjk_client.data.PlayerData.updateSkillInfo(skillInfo);
+
+            LOGGER.info("[Skill Info] Cached: {} ({})", skillId, displayName);
+
+            // Update current screen if it's waiting for this skill info
+            if (client.currentScreen instanceof com.justheare.paperjjk_client.screen.SkillDetailScreen detailScreen) {
+                if (detailScreen.getSkillId().equals(skillId)) {
+                    detailScreen.refresh();
+                }
+            }
         });
     }
 

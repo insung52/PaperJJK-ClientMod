@@ -1,12 +1,16 @@
 package com.justheare.paperjjk_client;
 
 import com.justheare.paperjjk_client.command.DebugCommand;
+import com.justheare.paperjjk_client.command.PlayerInfoCommand;
 import com.justheare.paperjjk_client.command.SkillConfigCommand;
 import com.justheare.paperjjk_client.data.ClientGameData;
 import com.justheare.paperjjk_client.keybind.JJKKeyBinds;
 import com.justheare.paperjjk_client.network.ClientPacketHandler;
 import com.justheare.paperjjk_client.render.DebugRenderer;
+import com.justheare.paperjjk_client.screen.PlayerInfoScreen;
+import com.justheare.paperjjk_client.network.PacketIds;
 // import com.justheare.paperjjk_client.render.DomainRenderer;
+import io.netty.buffer.Unpooled;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -14,11 +18,16 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.GameMenuScreen;
+import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.render.Camera;
 import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.PacketByteBuf;
+import net.minecraft.network.packet.c2s.common.CustomPayloadC2SPacket;
+import net.minecraft.text.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -67,6 +76,7 @@ public class PaperJJKClientClient implements ClientModInitializer {
 		// 4. 명령어 등록
 		LOGGER.info("[4/5] 명령어 등록 중...");
 		ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
+			PlayerInfoCommand.register(dispatcher);
 			SkillConfigCommand.register(dispatcher);
 			DebugCommand.register(dispatcher);
 		});
@@ -122,5 +132,54 @@ public class PaperJJKClientClient implements ClientModInitializer {
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			ClientGameData.updateAllDomains();
 		});
+
+		// ESC 메뉴에 "플레이어 정보" 버튼 추가
+		ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
+			if (screen instanceof GameMenuScreen) {
+				addPlayerInfoButton((GameMenuScreen) screen);
+			}
+		});
+	}
+
+	/**
+	 * ESC 메뉴 (GameMenuScreen)에 플레이어 정보 버튼 추가
+	 */
+	private void addPlayerInfoButton(GameMenuScreen screen) {
+		// 버튼 생성: "플레이어 정보" (Player Info)
+		// 위치: "옵션..." 버튼 아래, "LAN에 공개" 버튼 위
+		ButtonWidget playerInfoButton = ButtonWidget.builder(
+			Text.literal("플레이어 정보"),
+			button -> {
+				MinecraftClient client = MinecraftClient.getInstance();
+				if (client.player == null || client.getNetworkHandler() == null) {
+					return;
+				}
+
+				// Send player info request packet
+				PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+				buf.writeByte(PacketIds.PLAYER_INFO_REQUEST);
+				buf.writeLong(System.currentTimeMillis());
+
+				byte[] data = new byte[buf.readableBytes()];
+				buf.getBytes(0, data);
+
+				JJKKeyBinds.JJKPayload payload = new JJKKeyBinds.JJKPayload(data);
+				client.getNetworkHandler().sendPacket(new CustomPayloadC2SPacket(payload));
+
+				// Open PlayerInfoScreen
+				client.setScreen(new PlayerInfoScreen(screen));
+				LOGGER.info("[ESC Menu] Opened player info screen");
+			}
+		).dimensions(screen.width / 2 - 102, screen.height / 4 + 144, 204, 20).build();
+
+		// Use reflection to add button (addDrawableChild is protected)
+		try {
+			java.lang.reflect.Method addDrawableChild = net.minecraft.client.gui.screen.Screen.class.getDeclaredMethod("addDrawableChild", net.minecraft.client.gui.Element.class);
+			addDrawableChild.setAccessible(true);
+			addDrawableChild.invoke(screen, playerInfoButton);
+			LOGGER.debug("[ESC Menu] Added player info button to GameMenuScreen");
+		} catch (Exception e) {
+			LOGGER.error("[ESC Menu] Failed to add player info button: {}", e.getMessage());
+		}
 	}
 }
