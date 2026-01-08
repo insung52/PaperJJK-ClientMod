@@ -26,6 +26,10 @@ public class RefractionEffectManager {
         private long interpolationStartTime;
         private static final long INTERPOLATION_TIME_MS = 250; // 250ms smooth interpolation
 
+        // Timeout fields
+        private long lastUpdateTime;   // Last time this effect received an update (SYNC packet)
+        private static final long TIMEOUT_MS = 3000; // 3 seconds - remove effect if no SYNC packet received
+
         public RefractionEffect(Vec3d worldPos, float radius, float strength, String effectType, String uniqueId) {
             this.worldPos = worldPos;
             this.radius = radius;
@@ -37,6 +41,7 @@ public class RefractionEffectManager {
             this.startStrength = strength;
             this.targetStrength = strength;
             this.interpolationStartTime = System.currentTimeMillis();
+            this.lastUpdateTime = System.currentTimeMillis(); // Initialize timeout timer
         }
 
         /**
@@ -53,6 +58,9 @@ public class RefractionEffectManager {
 
             // Reset interpolation timer
             this.interpolationStartTime = System.currentTimeMillis();
+
+            // Reset timeout timer (effect is still alive)
+            this.lastUpdateTime = System.currentTimeMillis();
         }
 
         /**
@@ -87,6 +95,14 @@ public class RefractionEffectManager {
          */
         private float lerp(double start, double end, float alpha) {
             return (float) (start + (end - start) * alpha);
+        }
+
+        /**
+         * Check if this effect has timed out (no SYNC packet for TIMEOUT_MS)
+         */
+        public boolean isTimedOut() {
+            long currentTime = System.currentTimeMillis();
+            return (currentTime - lastUpdateTime) > TIMEOUT_MS;
         }
     }
 
@@ -252,6 +268,7 @@ public class RefractionEffectManager {
     /**
      * Tick all effects for interpolation
      * Should be called every render frame
+     * Also removes timed-out effects (no SYNC packet for 3+ seconds)
      */
     public static void tickEffects() {
         // Only log occasionally to avoid spam (once per second)
@@ -260,8 +277,26 @@ public class RefractionEffectManager {
                 "tickEffects() - Ticking " + effects.size() + " effect(s)");
         }
 
+        // Tick all effects for interpolation
         for (RefractionEffect effect : effects) {
             effect.tick();
+        }
+
+        // Remove timed-out effects
+        int beforeCount = effects.size();
+        effects.removeIf(effect -> {
+            if (effect.isTimedOut()) {
+                com.justheare.paperjjk_client.DebugConfig.log("RefractionEffectManager",
+                    "Effect timed out - removing: " + effect.uniqueId + " (type: " + effect.effectType + ")");
+                return true;
+            }
+            return false;
+        });
+
+        int removedCount = beforeCount - effects.size();
+        if (removedCount > 0) {
+            com.justheare.paperjjk_client.DebugConfig.log("RefractionEffectManager",
+                "Removed " + removedCount + " timed-out effect(s). Remaining: " + effects.size());
         }
     }
 }
