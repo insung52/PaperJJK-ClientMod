@@ -13,6 +13,7 @@
 	},
 	"license": "MIT",
 	"icon": "assets/paperjjk-client/icon.png",
+	"accessWidener": "paperjjk-client.accesswidener",
 	"environment": "client",
 	"entrypoints": {
 		"client": [
