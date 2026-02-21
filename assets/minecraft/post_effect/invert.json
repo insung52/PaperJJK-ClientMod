@@ -5,7 +5,7 @@
     "passes": [
         {
             "vertex_shader": "minecraft:core/screenquad",
-            "fragment_shader": "paperjjk-client:post/refraction",
+            "fragment_shader": "minecraft:post/invert",
             "inputs": [
                 {
                     "sampler_name": "In",
@@ -14,26 +14,11 @@
             ],
             "output": "swap",
             "uniforms": {
-                "RefractionConfig": [
+                "InvertConfig": [
                     {
-                        "name": "EffectCenter",
-                        "type": "vec2",
-                        "value": [ 0.5, 0.5 ]
-                    },
-                    {
-                        "name": "EffectRadius",
+                        "name": "InverseAmount",
                         "type": "float",
-                        "value": 0.3
-                    },
-                    {
-                        "name": "EffectStrength",
-                        "type": "float",
-                        "value": 0.05
-                    },
-                    {
-                        "name": "EffectType",
-                        "type": "int",
-                        "value": 0
+                        "value": 0.8
                     }
                 ]
             }
