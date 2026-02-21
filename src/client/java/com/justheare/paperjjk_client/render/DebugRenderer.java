@@ -2,12 +2,15 @@ package com.justheare.paperjjk_client.render;
 
 import com.justheare.paperjjk_client.data.ClientGameData;
 import com.justheare.paperjjk_client.mixin.client.CameraAccessor;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.render.*;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
+
+import java.util.Collection;
 
 /**
  * Debug renderer for testing basic rendering pipeline.
@@ -58,15 +61,24 @@ public class DebugRenderer {
     public static Vec3d getEffect1Position() { return effect1Position; }
     public static Vec3d getEffect2Position() { return effect2Position; }
 
-    public static void render(MatrixStack matrices, Camera camera, VertexConsumerProvider consumers) {
+    public static void render(MatrixStack matrices, Camera camera) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.world == null) return;
 
         Vec3d cameraPos = ((CameraAccessor) camera).getPos();
 
-        // SPHERE_LAYER uses DEBUG_FILLED_BOX pipeline: POSITION_COLOR format with translucent blending.
-        // Vertex calls: vertex(matrix, x, y, z).color(r, g, b, a) only — no texture/overlay/light/normal.
-        VertexConsumer consumer = consumers.getBuffer(SPHERE_LAYER);
+        // Early exit if nothing to render (Tessellator.begin must have vertices before end())
+        Collection<ClientGameData.ActiveDomain> domains = ClientGameData.getAllDomains();
+        boolean hasWork = renderCube || !domains.isEmpty()
+            || (renderEffect1 && effect1Position != null)
+            || (renderEffect2 && effect2Position != null);
+        if (!hasWork) return;
+
+        // Use Tessellator directly — bypasses Iris's VertexConsumerProvider g-buffer routing.
+        // At WorldRenderEvents.LAST, Iris has already composited its g-buffers, so vanilla
+        // pipeline draws land on the final framebuffer correctly.
+        Tessellator tessellator = Tessellator.getInstance();
+        BufferBuilder buffer = tessellator.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
 
         // Test cube: small red sphere 2m in front of camera
         if (renderCube) {
@@ -79,12 +91,12 @@ public class DebugRenderer {
 
             matrices.push();
             matrices.translate(testPos.x - cameraPos.x, testPos.y - cameraPos.y, testPos.z - cameraPos.z);
-            renderSphere(matrices.peek().getPositionMatrix(), consumer, 0.5f, 1.0f, 0.0f, 0.0f, 0.6f);
+            renderSphere(matrices.peek().getPositionMatrix(), buffer, 0.5f, 1.0f, 0.0f, 0.0f, 0.6f);
             matrices.pop();
         }
 
         // Active domains
-        for (ClientGameData.ActiveDomain domain : ClientGameData.getAllDomains()) {
+        for (ClientGameData.ActiveDomain domain : domains) {
             matrices.push();
             matrices.translate(
                 domain.center.x - cameraPos.x,
@@ -94,7 +106,7 @@ public class DebugRenderer {
             float r = ((domain.color >> 16) & 0xFF) / 255.0f;
             float g = ((domain.color >> 8) & 0xFF) / 255.0f;
             float b = (domain.color & 0xFF) / 255.0f;
-            renderSphere(matrices.peek().getPositionMatrix(), consumer, domain.currentRadius, r, g, b, 0.4f);
+            renderSphere(matrices.peek().getPositionMatrix(), buffer, domain.currentRadius, r, g, b, 0.4f);
             matrices.pop();
         }
 
@@ -106,7 +118,7 @@ public class DebugRenderer {
                 effect1Position.y - cameraPos.y,
                 effect1Position.z - cameraPos.z
             );
-            renderFresnelSphere(matrices.peek().getPositionMatrix(), consumer, 5.0f,
+            renderFresnelSphere(matrices.peek().getPositionMatrix(), buffer, 5.0f,
                 0.2f, 0.4f, 0.9f, cameraPos, effect1Position);
             matrices.pop();
         }
@@ -119,10 +131,12 @@ public class DebugRenderer {
                 effect2Position.y - cameraPos.y,
                 effect2Position.z - cameraPos.z
             );
-            renderFresnelSphere(matrices.peek().getPositionMatrix(), consumer, 2.5f,
+            renderFresnelSphere(matrices.peek().getPositionMatrix(), buffer, 2.5f,
                 1.0f, 0.8f, 0.2f, cameraPos, effect2Position);
             matrices.pop();
         }
+
+        SPHERE_LAYER.draw(buffer.end());
     }
 
     /**

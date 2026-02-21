@@ -12,7 +12,6 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
@@ -104,17 +103,8 @@ public class PaperJJKClientClient implements ClientModInitializer {
 			// DomainRenderer.dispose();
 		});
 
-		// WorldRenderEvents를 사용한 렌더링
-		// AFTER_ENTITIES: 엔티티 렌더링 후, 반투명 지형 전에 실행
-		WorldRenderEvents.AFTER_ENTITIES.register((WorldRenderContext context) -> {
-			// Debug cube rendering
-			Camera camera = MinecraftClient.getInstance().gameRenderer.getCamera();
-			DebugRenderer.render(context.matrices(), camera, context.consumers());
-
-			// Domain rendering (disabled for now)
-			// float tickDelta = context.tickCounter().getTickDelta(true);
-			// DomainRenderer.render(context.matrices(), tickDelta, camera);
-		});
+		// 구체 렌더링은 GameRendererMixin.paperjjk$renderSpheres()에서 처리.
+		// WorldRenderer.render() 직후 inject하여 Iris g-buffer 우회.
 
 
 		// Post-processing은 이제 GameRendererMixin에서 처리됩니다 (Iris처럼 renderLevel의 TAIL에 injection)
