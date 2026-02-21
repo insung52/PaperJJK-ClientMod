@@ -89,6 +89,7 @@ public class PacketIds {
         public static final byte START = 0x01;       // Start expansion animation
         public static final byte SYNC = 0x02;        // Sync current radius (every 3 seconds)
         public static final byte END = 0x03;         // Destroy domain
+        public static final byte COMPLETE = 0x04;    // Expansion complete - final radius
     }
 
     /**

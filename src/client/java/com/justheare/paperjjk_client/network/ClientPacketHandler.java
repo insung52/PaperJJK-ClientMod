@@ -148,6 +148,18 @@ public class ClientPacketHandler {
                 });
             }
 
+            case PacketIds.DomainVisualAction.COMPLETE -> {
+                long uuidMost = buf.readLong();
+                long uuidLeast = buf.readLong();
+                java.util.UUID domainId = new java.util.UUID(uuidMost, uuidLeast);
+                float finalRadius = buf.readFloat();
+
+                client.execute(() -> {
+                    ClientGameData.completeDomain(domainId, finalRadius);
+                    LOGGER.info("[Domain Visual] COMPLETE: id={}, finalRadius={}", domainId, finalRadius);
+                });
+            }
+
             default -> LOGGER.warn("[Domain Visual] Unknown action: 0x{}", String.format("%02X", action));
         }
     }

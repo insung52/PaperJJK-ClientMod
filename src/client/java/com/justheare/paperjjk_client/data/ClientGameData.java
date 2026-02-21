@@ -139,6 +139,20 @@ public class ClientGameData {
     }
 
     /**
+     * Complete domain expansion - snap to final radius and stop expanding
+     * Called when server confirms expansion has reached max radius
+     */
+    public static void completeDomain(UUID id, float finalRadius) {
+        ActiveDomain domain = activeDomains.get(id);
+        if (domain != null) {
+            domain.serverRadius = finalRadius;
+            domain.currentRadius = finalRadius;
+            domain.maxRadius = finalRadius;
+            domain.isExpanding = false;
+        }
+    }
+
+    /**
      * Update all domains (called every client tick)
      */
     public static void updateAllDomains() {
