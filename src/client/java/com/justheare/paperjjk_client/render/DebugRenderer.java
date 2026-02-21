@@ -91,7 +91,7 @@ public class DebugRenderer {
 
             matrices.push();
             matrices.translate(testPos.x - cameraPos.x, testPos.y - cameraPos.y, testPos.z - cameraPos.z);
-            renderSphere(matrices.peek().getPositionMatrix(), buffer, 0.5f, 1.0f, 0.0f, 0.0f, 0.6f);
+            renderSphere(matrices.peek().getPositionMatrix(), buffer, 0.5f, 1.0f, 0.0f, 0.0f, 0.35f);
             matrices.pop();
         }
 
@@ -106,7 +106,7 @@ public class DebugRenderer {
             float r = ((domain.color >> 16) & 0xFF) / 255.0f;
             float g = ((domain.color >> 8) & 0xFF) / 255.0f;
             float b = (domain.color & 0xFF) / 255.0f;
-            renderSphere(matrices.peek().getPositionMatrix(), buffer, domain.currentRadius, r, g, b, 0.4f);
+            renderSphere(matrices.peek().getPositionMatrix(), buffer, domain.currentRadius, r, g, b, 0.2f);
             matrices.pop();
         }
 
@@ -253,7 +253,7 @@ public class DebugRenderer {
         float r = Math.min(1.0f, baseR + fresnel * 1.5f);
         float g = Math.min(1.0f, baseG + fresnel * 1.5f);
         float b = Math.min(1.0f, baseB + fresnel * 0.5f);
-        float a = 0.2f + fresnel * 0.7f;
+        float a = 0.1f + fresnel * 0.5f;
 
         consumer.vertex(matrix, (float) pos.x, (float) pos.y, (float) pos.z).color(r, g, b, a);
     }

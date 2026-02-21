@@ -280,72 +280,39 @@ public class CustomPostProcessing {
             com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
                 "Framebuffer size: " + mainFramebuffer.textureWidth + "x" + mainFramebuffer.textureHeight);
 
-            // In Minecraft 1.21, Framebuffer doesn't store FBO ID directly
-            // Instead, we use the currently bound FBO (set by Minecraft's rendering pipeline)
-            // During HudRenderCallback, the main framebuffer should already be bound
+            // Save current FBO for state restore at end
+            int savedFbo = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
 
-            // First, try to get the color texture's GL ID
-            int mainTextureId = getFramebufferTextureId(mainFramebuffer);
-            com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
-                "Main texture ID: " + mainTextureId);
+            // We are called just before blitToScreen(), so client.getFramebuffer() already
+            // contains the fully composited scene (gameRenderer.render() has finished).
+            // We read from it, apply distortion, and write back to it — same framebuffer.
+            com.mojang.blaze3d.textures.GpuTexture colorAttachmentGpu = mainFramebuffer.getColorAttachment();
+            if (colorAttachmentGpu == null) {
+                com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing", "ERROR: colorAttachment is null");
+                return;
+            }
+            net.minecraft.client.texture.GlTexture glTexture = (net.minecraft.client.texture.GlTexture) colorAttachmentGpu;
+            int mainTextureId = glTexture.getGlId();
+            System.out.println("[CustomPostProcessing] mainTextureId=" + mainTextureId + " fb=" + mainFramebuffer.getClass().getSimpleName() + " size=" + mainFramebuffer.textureWidth + "x" + mainFramebuffer.textureHeight);
 
-            if (mainTextureId == -1) {
-                com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
-                    "ERROR: Failed to get main framebuffer texture ID");
+            if (mainTextureId <= 0) {
+                System.out.println("[CustomPostProcessing] ERROR: invalid mainTextureId: " + mainTextureId);
                 return;
             }
 
-            // Step 2: Get depth texture ID - prioritize Iris depthtex2 (world depth without hand)
+            // Read and write the same framebuffer (blitToScreen reads it next)
+            int presentTextureId = mainTextureId;
+
+            // Get depth texture ID - prioritize Iris depthtex2 (world depth without hand)
             int depthTextureId = getIrisWorldDepthTexture();
             if (depthTextureId == -1) {
-                // Fallback to Minecraft's default depth texture
-                // System.out.println("[CustomPostProcessing] Step 2: Iris depth unavailable, using Minecraft framebuffer depth");
                 depthTextureId = getFramebufferDepthTextureId(mainFramebuffer);
             }
-
-            if (depthTextureId == -1) {
-                // System.err.println("[CustomPostProcessing] Step 2: WARNING - No depth texture available, occlusion disabled");
-            } else {
-                // Query the depth texture format
-                GL13.glActiveTexture(GL13.GL_TEXTURE0);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, depthTextureId);
-                int originalFormat = GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_INTERNAL_FORMAT);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
-
-                // System.out.println("[CustomPostProcessing] Step 2: Using depth texture ID: " + depthTextureId + ", Format: 0x" + Integer.toHexString(originalFormat));
-            }
-
-            // Get the currently bound FBO - this should be Minecraft's rendering FBO
-            int currentFbo = GL11.glGetInteger(GL30.GL_FRAMEBUFFER_BINDING);
-            com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
-                "Current FBO binding: " + currentFbo);
-
-            // If it's FBO 0 (default framebuffer), we need a different approach
-            // Try to bind the colorAttachment's parent FBO by querying it
-            if (currentFbo == 0) {
-                // Bind the texture and check what FBO it belongs to
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, mainTextureId);
-
-                // Query which FBO this texture is attached to (this is hacky but might work)
-                // Actually, we can't query this directly. Let's create our own FBO for the main texture
-                //// System.out.println("[CustomPostProcessing] Current FBO is 0, creating wrapper FBO for main texture");
-
-                // We'll use a different strategy: don't copy FROM mainFbo, just render to it
-                currentFbo = 0; // Keep as 0, we'll handle this specially
-            }
-
-            int mainFbo = currentFbo;
-            /*// System.out.println("[CustomPostProcessing] Current FBO binding: " + mainFbo +
-                ", Main texture ID: " + mainTextureId +
-                " (size: " + mainFramebuffer.textureWidth + "x" + mainFramebuffer.textureHeight + ")");*/
 
             // Create or resize temp framebuffer if needed
             if (tempFbo == -1 ||
                 tempWidth != mainFramebuffer.textureWidth ||
                 tempHeight != mainFramebuffer.textureHeight) {
-
-                // Save current FBO binding
-                int savedFbo = mainFbo;
 
                 // Delete old resources
                 if (tempFbo != -1) {
@@ -421,87 +388,65 @@ public class CustomPostProcessing {
 
 
             // CRITICAL: If tempFbo and mainFbo are the same, we can't proceed!
-            if (tempFbo == mainFbo && mainFbo != 0) {
-                // System.err.println("[CustomPostProcessing] ERROR: tempFbo == mainFbo (" + tempFbo + "), cannot render to same framebuffer!");
-                return;
-            }
-
-            // STEP 2: Copy main texture to our source texture
-            // Strategy depends on whether mainFbo is 0 or not
-            if (mainFbo == 0) {
-                // FBO 0: We can't use glCopyTexSubImage2D from it
-                // Instead, we'll use glBlitFramebuffer or texture-to-texture copy
-                // Create a temporary FBO to hold mainTextureId so we can blit from it
+            // STEP 2: Copy mainFramebuffer's color texture to sourceTexture via temp READ FBO.
+            // We wrap mainTextureId (the actual GlTexture GL ID) in a temporary FBO so we
+            // can blit from it — this is the correct way in MC 1.21 since glGetInteger
+            // (FRAMEBUFFER_BINDING) may return 0 and not the actual rendering framebuffer.
+            {
                 int tempReadFbo = GL30.glGenFramebuffers();
                 GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, tempReadFbo);
                 GL30.glFramebufferTexture2D(GL30.GL_READ_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
                     GL11.GL_TEXTURE_2D, mainTextureId, 0);
 
-                // Attach sourceTexture to a write FBO
-                int tempWriteFbo = GL30.glGenFramebuffers();
-                GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, tempWriteFbo);
+                int tempWriteFbo2 = GL30.glGenFramebuffers();
+                GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, tempWriteFbo2);
                 GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
                     GL11.GL_TEXTURE_2D, sourceTexture, 0);
 
-                // Blit from mainTexture to sourceTexture
-                GL30.glBlitFramebuffer(0, 0, tempWidth, tempHeight,
-                    0, 0, tempWidth, tempHeight,
-                    GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
+                int readStatus = GL30.glCheckFramebufferStatus(GL30.GL_READ_FRAMEBUFFER);
+                int writeStatus = GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER);
+                com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                    "Step2 FBO status READ=" + readStatus + " WRITE=" + writeStatus);
 
-                // Cleanup temp FBOs and restore framebuffer state
+                if (readStatus == GL30.GL_FRAMEBUFFER_COMPLETE && writeStatus == GL30.GL_FRAMEBUFFER_COMPLETE) {
+                    GL30.glBlitFramebuffer(0, 0, tempWidth, tempHeight,
+                        0, 0, tempWidth, tempHeight,
+                        GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
+                }
+
                 GL30.glDeleteFramebuffers(tempReadFbo);
-                GL30.glDeleteFramebuffers(tempWriteFbo);
-                // Unbind read/draw framebuffers to clean state
+                GL30.glDeleteFramebuffers(tempWriteFbo2);
                 GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, 0);
                 GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, 0);
 
-                // Step 2: Copy depth texture data (if available)
+                // Copy depth texture data (if available)
                 if (depthTextureId != -1 && copiedDepthTexture != -1) {
                     int tempDepthReadFbo = GL30.glGenFramebuffers();
                     int tempDepthWriteFbo = GL30.glGenFramebuffers();
 
-                    // Attach source depth texture to read FBO
                     GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, tempDepthReadFbo);
                     GL30.glFramebufferTexture2D(GL30.GL_READ_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT,
                         GL11.GL_TEXTURE_2D, depthTextureId, 0);
 
-                    // Check read FBO status
-                    int readStatus = GL30.glCheckFramebufferStatus(GL30.GL_READ_FRAMEBUFFER);
-                    if (readStatus == GL30.GL_FRAMEBUFFER_COMPLETE) {
-                        // Attach copied depth texture to write FBO
+                    int depthReadStatus = GL30.glCheckFramebufferStatus(GL30.GL_READ_FRAMEBUFFER);
+                    if (depthReadStatus == GL30.GL_FRAMEBUFFER_COMPLETE) {
                         GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, tempDepthWriteFbo);
                         GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER, GL30.GL_DEPTH_ATTACHMENT,
                             GL11.GL_TEXTURE_2D, copiedDepthTexture, 0);
 
-                        // Check write FBO status
-                        int writeStatus = GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER);
-                        if (writeStatus == GL30.GL_FRAMEBUFFER_COMPLETE) {
-                            // Blit depth buffer
+                        int depthWriteStatus = GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER);
+                        if (depthWriteStatus == GL30.GL_FRAMEBUFFER_COMPLETE) {
                             GL30.glBlitFramebuffer(0, 0, tempWidth, tempHeight,
                                 0, 0, tempWidth, tempHeight,
                                 GL11.GL_DEPTH_BUFFER_BIT, GL11.GL_NEAREST);
-                            // System.out.println("[CustomPostProcessing] Step 2: Depth data copied successfully");
-                        } else {
-                            // System.err.println("[CustomPostProcessing] Step 2: Write FBO incomplete: " + writeStatus);
                         }
-                    } else {
-                        // System.err.println("[CustomPostProcessing] Step 2: Read FBO incomplete: " + readStatus);
                     }
 
-                    // Cleanup and restore state
                     GL30.glDeleteFramebuffers(tempDepthReadFbo);
                     GL30.glDeleteFramebuffers(tempDepthWriteFbo);
                     GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, 0);
                     GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, 0);
                 }
-            } else {
-                // Normal FBO: use glCopyTexSubImage2D
-                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, mainFbo);
-                // CRITICAL: Ensure we're on texture unit 0 before binding
-                GL13.glActiveTexture(GL13.GL_TEXTURE0);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, sourceTexture);
-                GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, tempWidth, tempHeight);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
             }
 
             // STEP 3: Render distorted version from sourceTexture to destTexture (via tempFbo)
@@ -561,52 +506,37 @@ public class CustomPostProcessing {
                 // System.out.println("[CustomPostProcessing] Step 3: Immediately unbound depth from unit 5 after draw");
             }
 
-            // STEP 4: Copy distorted image back to main framebuffer texture
-            if (mainFbo == 0) {
-                // FBO 0: Use blit from destTexture to mainTextureId
-                // Create temp FBO for mainTextureId
+            // STEP 4: Blit distorted result (destTexture via tempFbo) back to presentTextureId.
+            // presentTextureId is client.getFramebuffer()'s texture (WindowFramebuffer) —
+            // what MC's blitToScreen() reads from when presenting the frame.
+            {
                 int tempWriteFbo = GL30.glGenFramebuffers();
                 GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, tempWriteFbo);
                 GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
-                    GL11.GL_TEXTURE_2D, mainTextureId, 0);
+                    GL11.GL_TEXTURE_2D, presentTextureId, 0);
 
-                // Read from tempFbo (which has destTexture)
                 GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, tempFbo);
 
-                // Blit
                 GL30.glBlitFramebuffer(0, 0, tempWidth, tempHeight,
                     0, 0, tempWidth, tempHeight,
                     GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
 
-                // Cleanup and restore framebuffer state
                 GL30.glDeleteFramebuffers(tempWriteFbo);
                 GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, 0);
                 GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, 0);
-            } else {
-                // Normal FBO: Copy from tempFbo to mainFbo
-                GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, tempFbo);
-                GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, mainFbo);
-
-                // CRITICAL: Ensure we're on texture unit 0 before binding
-                GL13.glActiveTexture(GL13.GL_TEXTURE0);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, mainTextureId);
-                GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, tempWidth, tempHeight);
             }
 
-            // Restore state - unbind all textures properly
-            // Step 3: Unbind depth texture from unit 5 if it was used (double-check)
+            // Restore state
             if (depthTextureId != -1) {
                 GL13.glActiveTexture(GL13.GL_TEXTURE5);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
-                // System.out.println("[CustomPostProcessing] Step 3: Final unbind depth from unit 5");
             }
-            // Unbind color texture from unit 0 and ensure we're on unit 0
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
 
             GL30.glBindVertexArray(0);
             GL20.glUseProgram(0);
-            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, mainFbo);
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, savedFbo);
 
             // Restore GL state
             if (depthTestEnabled) GL11.glEnable(GL11.GL_DEPTH_TEST);
@@ -904,6 +834,38 @@ public class CustomPostProcessing {
             // System.err.println("[CustomPostProcessing] Failed to access Iris depth texture:");
             e.printStackTrace();
             return -1;
+        }
+    }
+
+    /**
+     * Get the actual RENDERING framebuffer from WorldRenderer.framebufferSet.mainFramebuffer.
+     *
+     * In MC 1.21, client.getFramebuffer() returns the WindowFramebuffer (presentation
+     * framebuffer). The actual world rendering goes into DefaultFramebufferSet.mainFramebuffer,
+     * a separate SimpleFramebuffer. Using the wrong one results in reading an empty texture.
+     *
+     * With Iris, Iris patches client.framebuffer AND framebufferSet.mainFramebuffer to point
+     * to its composite output, so both work. Without Iris (vanilla), they differ.
+     */
+    private static net.minecraft.client.gl.Framebuffer getRenderingFramebuffer(
+            net.minecraft.client.render.WorldRenderer worldRenderer) {
+        try {
+            java.lang.reflect.Field field = net.minecraft.client.render.WorldRenderer.class
+                .getDeclaredField("framebufferSet");
+            field.setAccessible(true);
+            net.minecraft.client.render.DefaultFramebufferSet fbSet =
+                (net.minecraft.client.render.DefaultFramebufferSet) field.get(worldRenderer);
+
+            if (fbSet == null || fbSet.mainFramebuffer == null) return null;
+
+            net.minecraft.client.gl.Framebuffer fb = fbSet.mainFramebuffer.get();
+            if (fb == null || fb.getColorAttachment() == null) return null;
+
+            return fb;
+        } catch (Exception e) {
+            com.justheare.paperjjk_client.DebugConfig.log("CustomPostProcessing",
+                "getRenderingFramebuffer failed: " + e.getMessage());
+            return null;
         }
     }
 }
