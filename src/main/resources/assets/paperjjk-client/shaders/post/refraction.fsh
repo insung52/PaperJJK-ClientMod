@@ -10,6 +10,7 @@ layout(std140) uniform RefractionConfig {
     float EffectStrength; // Distortion strength
     int EffectType;       // 0=AO (blue), 1=AKA (red), 2=MURASAKI (purple)
     float EffectDepth;    // Depth buffer value of effect center [0, 1]
+    float Time;           // Elapsed time in seconds for animation
 };
 
 in vec2 texCoord;
@@ -59,15 +60,15 @@ void main(){
         float fadeStart = 0.8 * bloomRadiusMultiplier / 1.2;
         float edgeFade = 1.0 - smoothstep(fadeStart, bloomRadiusMultiplier, normalizedDist);
 
-        float uTime = float(gl_FragCoord.x * 0.0001); // dummy; use animated time via a workaround
-        // Note: no uTime available in post effect — use a static approximation
         float bloomFactor = exp(-normalizedDist * 4.0) * 5.0 * absStrength;
 
+        // Rotating spiral — Time drives the rotation speed
         float angle = atan(toCenter.y, toCenter.x);
-        float spiral = sin(angle * 6.0 + dist * 10.0) * 0.5 + 0.5;
+        float spiral = sin(angle * 6.0 + dist * 10.0 - Time * 3.0) * 0.5 + 0.5;
         bloomFactor *= (0.7 + spiral * 0.3);
 
-        float noise = fract(sin(dot(texCoord * 100.0, vec2(12.9898, 78.233))) * 43758.5453);
+        // Animated flicker noise
+        float noise = fract(sin(dot(texCoord * 100.0 + Time * 0.5, vec2(12.9898, 78.233))) * 43758.5453);
         bloomFactor *= (0.8 + noise * 0.8);
 
         bloomFactor *= edgeFade;

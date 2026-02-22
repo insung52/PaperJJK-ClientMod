@@ -107,10 +107,12 @@ public class MinecraftClientMixin {
             float effectDepth = com.justheare.paperjjk_client.util.WorldToScreenUtil.worldToDepth(
                 effect.worldPos, camera, projectionMatrix);
 
+            float time = (float)(System.currentTimeMillis() % 10000) / 1000.0f;
+
             // Update RefractionConfig uniform buffer via CommandEncoder
             updateRefractionUniforms(processor,
                 (float) screenPos.x, (float) screenPos.y,
-                scaledRadius, effect.strength, effectTypeInt, effectDepth);
+                scaledRadius, effect.strength, effectTypeInt, effectDepth, time);
 
             // Run the post-effect through MC's FrameGraphBuilder pipeline
             processor.render(mainFb, ObjectAllocator.TRIVIAL);
@@ -129,15 +131,32 @@ public class MinecraftClientMixin {
     private void updateRefractionUniforms(PostEffectProcessor processor,
                                            float centerX, float centerY,
                                            float radius, float strength,
-                                           int effectType, float effectDepth) {
+                                           int effectType, float effectDepth, float time) {
         try {
-            java.lang.reflect.Field passesField = PostEffectProcessor.class.getDeclaredField("passes");
+            // Find "passes" by type (List) — avoids hardcoded Yarn field name
+            // that breaks in production where intermediary mapping is used.
+            java.lang.reflect.Field passesField = null;
+            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
+                if (java.util.List.class.isAssignableFrom(f.getType())) {
+                    passesField = f;
+                    break;
+                }
+            }
+            if (passesField == null) return;
             passesField.setAccessible(true);
             List<?> passes = (List<?>) passesField.get(processor);
             if (passes.isEmpty()) return;
             Object firstPass = passes.get(0);
 
-            java.lang.reflect.Field uniformBuffersField = firstPass.getClass().getDeclaredField("uniformBuffers");
+            // Find "uniformBuffers" by type (Map) — same reason
+            java.lang.reflect.Field uniformBuffersField = null;
+            for (java.lang.reflect.Field f : firstPass.getClass().getDeclaredFields()) {
+                if (java.util.Map.class.isAssignableFrom(f.getType())) {
+                    uniformBuffersField = f;
+                    break;
+                }
+            }
+            if (uniformBuffersField == null) return;
             uniformBuffersField.setAccessible(true);
             // The map is a HashMap — we need a mutable cast
             @SuppressWarnings("unchecked")
@@ -149,26 +168,27 @@ public class MinecraftClientMixin {
 
             // USAGE_COPY_DST=8, USAGE_UNIFORM=128 → 136
             // Replace buffer if it lacks COPY_DST or is too small for current layout
-            // std140: vec2(8) + float(4) + float(4) + int(4) + float(4) = 24 bytes
-            if ((buf.usage() & 8) == 0 || buf.size() < 24) {
+            // std140: vec2(8) + float(4) + float(4) + int(4) + float(4) + float(4) = 28 bytes
+            if ((buf.usage() & 8) == 0 || buf.size() < 28) {
                 buf.close();
                 com.mojang.blaze3d.buffers.GpuBuffer newBuf =
                     com.mojang.blaze3d.systems.RenderSystem.getDevice()
-                        .createBuffer(() -> "JJK RefractionConfig", 8 | 128, 24);
+                        .createBuffer(() -> "JJK RefractionConfig", 8 | 128, 28);
                 uniformBuffers.put("RefractionConfig", newBuf);
                 buf = newBuf;
             }
 
-            // Write values — std140: vec2(8) + float(4) + float(4) + int(4) + float(4) = 24 bytes
+            // Write values — std140: vec2(8) + float(4) + float(4) + int(4) + float(4) + float(4) = 28 bytes
             org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush();
             try {
                 com.mojang.blaze3d.buffers.Std140Builder builder =
-                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 24);
+                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 28);
                 builder.putVec2(centerX, centerY);
                 builder.putFloat(radius);
                 builder.putFloat(strength);
                 builder.putInt(effectType);
                 builder.putFloat(effectDepth);
+                builder.putFloat(time);
                 com.mojang.blaze3d.systems.RenderSystem.getDevice()
                     .createCommandEncoder()
                     .writeToBuffer(buf.slice(), builder.get());
