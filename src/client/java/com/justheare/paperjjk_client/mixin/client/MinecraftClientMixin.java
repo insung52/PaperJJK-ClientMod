@@ -82,6 +82,14 @@ public class MinecraftClientMixin {
 
         Framebuffer mainFb = client.getFramebuffer();
 
+        // Copy world depth (captured by WorldRendererMixin via FramePass) into WindowFramebuffer
+        // so the DepthSampler in our post-effect can read it for occlusion testing.
+        Framebuffer worldDepthFb = com.justheare.paperjjk_client.render.JJKDepthCache.get();
+        if (worldDepthFb != null && worldDepthFb.getDepthAttachment() != null
+                && mainFb.getDepthAttachment() != null) {
+            mainFb.copyDepthFrom(worldDepthFb);
+        }
+
         // Apply one pass per effect by updating the uniform buffer before each render
         for (com.justheare.paperjjk_client.shader.RefractionEffectManager.RefractionEffect effect : effects) {
             net.minecraft.util.math.Vec3d screenPos =
@@ -96,10 +104,13 @@ public class MinecraftClientMixin {
             int effectTypeInt = "AKA".equals(effect.effectType) ? 1 :
                                 "MURASAKI".equals(effect.effectType) || "MURASAKI_EXPLODE".equals(effect.effectType) ? 2 : 0;
 
+            float effectDepth = com.justheare.paperjjk_client.util.WorldToScreenUtil.worldToDepth(
+                effect.worldPos, camera, projectionMatrix);
+
             // Update RefractionConfig uniform buffer via CommandEncoder
             updateRefractionUniforms(processor,
                 (float) screenPos.x, (float) screenPos.y,
-                scaledRadius, effect.strength, effectTypeInt);
+                scaledRadius, effect.strength, effectTypeInt, effectDepth);
 
             // Run the post-effect through MC's FrameGraphBuilder pipeline
             processor.render(mainFb, ObjectAllocator.TRIVIAL);
@@ -117,7 +128,8 @@ public class MinecraftClientMixin {
     @SuppressWarnings("unchecked")
     private void updateRefractionUniforms(PostEffectProcessor processor,
                                            float centerX, float centerY,
-                                           float radius, float strength, int effectType) {
+                                           float radius, float strength,
+                                           int effectType, float effectDepth) {
         try {
             java.lang.reflect.Field passesField = PostEffectProcessor.class.getDeclaredField("passes");
             passesField.setAccessible(true);
@@ -136,26 +148,27 @@ public class MinecraftClientMixin {
             if (buf == null) return;
 
             // USAGE_COPY_DST=8, USAGE_UNIFORM=128 → 136
-            // If the buffer doesn't have COPY_DST, replace it with one that does
-            if ((buf.usage() & 8) == 0) {
-                buf.close(); // free the old buffer
-                // std140: vec2(8) + float(4) + float(4) + int(4) = 20 bytes
+            // Replace buffer if it lacks COPY_DST or is too small for current layout
+            // std140: vec2(8) + float(4) + float(4) + int(4) + float(4) = 24 bytes
+            if ((buf.usage() & 8) == 0 || buf.size() < 24) {
+                buf.close();
                 com.mojang.blaze3d.buffers.GpuBuffer newBuf =
                     com.mojang.blaze3d.systems.RenderSystem.getDevice()
-                        .createBuffer(() -> "JJK RefractionConfig", 8 | 128, 20);
+                        .createBuffer(() -> "JJK RefractionConfig", 8 | 128, 24);
                 uniformBuffers.put("RefractionConfig", newBuf);
                 buf = newBuf;
             }
 
-            // Write values — std140: vec2(8) + float(4) + float(4) + int(4) = 20 bytes
+            // Write values — std140: vec2(8) + float(4) + float(4) + int(4) + float(4) = 24 bytes
             org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush();
             try {
                 com.mojang.blaze3d.buffers.Std140Builder builder =
-                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 20);
+                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 24);
                 builder.putVec2(centerX, centerY);
                 builder.putFloat(radius);
                 builder.putFloat(strength);
                 builder.putInt(effectType);
+                builder.putFloat(effectDepth);
                 com.mojang.blaze3d.systems.RenderSystem.getDevice()
                     .createCommandEncoder()
                     .writeToBuffer(buf.slice(), builder.get());

@@ -1,6 +1,7 @@
 #version 330
 
 uniform sampler2D InSampler;
+uniform sampler2D DepthSampler;
 
 // Refraction effect parameters
 layout(std140) uniform RefractionConfig {
@@ -8,6 +9,7 @@ layout(std140) uniform RefractionConfig {
     float EffectRadius;   // Radius in screen space
     float EffectStrength; // Distortion strength
     int EffectType;       // 0=AO (blue), 1=AKA (red), 2=MURASAKI (purple)
+    float EffectDepth;    // Depth buffer value of effect center [0, 1]
 };
 
 in vec2 texCoord;
@@ -38,6 +40,13 @@ void main(){
         float distortAmount = EffectStrength * 0.05 * falloff / dist;
         if (EffectType == 0) distortAmount *= 0.2;
         sampleCoord = clamp(texCoord + toCenter * distortAmount, 0.0, 1.0);
+    }
+
+    // Occlusion test: skip effect where geometry is closer than effect center
+    float pixelDepth = texture(DepthSampler, texCoord).r;
+    if (pixelDepth < EffectDepth - 0.0001) {
+        fragColor = texture(InSampler, texCoord);
+        return;
     }
 
     vec4 color = texture(InSampler, sampleCoord);

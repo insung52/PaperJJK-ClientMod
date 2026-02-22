@@ -65,4 +65,35 @@ public class WorldToScreenUtil {
 
         return new Vec3d(screenX, screenY, distance);
     }
+
+    /**
+     * Convert world position to depth buffer value [0, 1].
+     * 0 = near plane, 1 = far plane.
+     * Returns 1.0 if position is behind camera.
+     */
+    public static float worldToDepth(Vec3d worldPos, Camera camera, Matrix4f projectionMatrix) {
+        Vec3d cameraPos = ((CameraAccessor) camera).getPos();
+
+        Vector3f relativePos = new Vector3f(
+            (float) (worldPos.x - cameraPos.x),
+            (float) (worldPos.y - cameraPos.y),
+            (float) (worldPos.z - cameraPos.z)
+        );
+
+        Matrix4f viewMatrix = new Matrix4f();
+        viewMatrix.rotation(camera.getRotation().conjugate(new org.joml.Quaternionf()));
+
+        Vector4f viewPos = new Vector4f(relativePos, 1.0f);
+        viewMatrix.transform(viewPos);
+
+        if (viewPos.z > 0) return 1.0f; // behind camera
+
+        Vector4f clipPos = new Vector4f(viewPos);
+        projectionMatrix.transform(clipPos);
+
+        if (Math.abs(clipPos.w) < 0.001f) return 1.0f;
+
+        float ndcZ = clipPos.z / clipPos.w;
+        return Math.max(0.0f, Math.min(1.0f, (ndcZ + 1.0f) * 0.5f));
+    }
 }
