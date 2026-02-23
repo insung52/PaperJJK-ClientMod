@@ -54,13 +54,15 @@ void main(){
 
     // Bloom
     float bloomRadiusMultiplier = (EffectType == 0) ? 0.4 : 1.2;
-    if (dist < effectRadius * bloomRadiusMultiplier) {
-        float normalizedDist = dist / effectRadius;
+    float bloomActualRadius = effectRadius * bloomRadiusMultiplier;
+    if (dist < bloomActualRadius) {
+        // normalizedDist: 0=center, 1=bloom edge — full range used for gradient
+        float normalizedDist = dist / bloomActualRadius;
 
-        float fadeStart = 0.8 * bloomRadiusMultiplier / 1.2;
-        float edgeFade = 1.0 - smoothstep(fadeStart, bloomRadiusMultiplier, normalizedDist);
+        float bloomFactor = exp(-normalizedDist * 6.0) * 5.0 * absStrength;
 
-        float bloomFactor = exp(-normalizedDist * 4.0) * 5.0 * absStrength;
+        // Smooth fade to exactly 0 at boundary — eliminates hard cutoff
+        bloomFactor *= 1.0 - smoothstep(0.3, 1.0, normalizedDist);
 
         // Rotating spiral — Time drives the rotation speed
         float angle = atan(toCenter.y, toCenter.x);
@@ -71,7 +73,6 @@ void main(){
         float noise = fract(sin(dot(texCoord * 100.0 + Time * 0.5, vec2(12.9898, 78.233))) * 43758.5453);
         bloomFactor *= (0.8 + noise * 0.8);
 
-        bloomFactor *= edgeFade;
         if (EffectType == 0) bloomFactor *= 0.5;
 
         vec3 bloomColor;
@@ -83,7 +84,7 @@ void main(){
             bloomColor = vec3(0.8, 0.2, 1.0);
         }
 
-        color.rgb += bloomColor * bloomFactor;
+        color.rgb += bloomColor * (bloomFactor * 0.9);
     }
 
     fragColor = color;
