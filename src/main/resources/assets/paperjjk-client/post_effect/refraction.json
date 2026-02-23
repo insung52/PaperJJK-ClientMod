@@ -49,6 +49,11 @@
                         "name": "Time",
                         "type": "float",
                         "value": 0.0
+                    },
+                    {
+                        "name": "EffectWorldDist",
+                        "type": "float",
+                        "value": 10.0
                     }
                 ]
             }

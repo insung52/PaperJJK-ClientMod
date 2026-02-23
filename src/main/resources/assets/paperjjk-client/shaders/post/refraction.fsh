@@ -5,12 +5,13 @@ uniform sampler2D DepthSampler;
 
 // Refraction effect parameters
 layout(std140) uniform RefractionConfig {
-    vec2 EffectCenter;    // Screen space center (0.0 - 1.0)
-    float EffectRadius;   // Radius in screen space
-    float EffectStrength; // Distortion strength
-    int EffectType;       // 0=AO (blue), 1=AKA (red), 2=MURASAKI (purple)
-    float EffectDepth;    // Depth buffer value of effect center [0, 1]
-    float Time;           // Elapsed time in seconds for animation
+    vec2 EffectCenter;      // Screen space center (0.0 - 1.0)
+    float EffectRadius;     // Radius in screen space
+    float EffectStrength;   // Distortion strength
+    int EffectType;         // 0=AO (blue), 1=AKA (red), 2=MURASAKI (purple)
+    float EffectDepth;      // Depth buffer value of effect center [0, 1]
+    float Time;             // Elapsed time in seconds for animation
+    float EffectWorldDist;  // Camera-to-effect distance in blocks (for distortion attenuation)
 };
 
 in vec2 texCoord;
@@ -38,7 +39,10 @@ void main(){
     if (dist < effectRadius && dist > 0.0001) {
         float normalizedDist = dist / effectRadius;
         float falloff = 1.0 - smoothstep(0.0, 1.0, normalizedDist);
-        float distortAmount = EffectStrength * 0.05 * falloff / dist;
+        // Attenuate distortion with world distance so it looks consistent regardless of range
+        // Reference distance = 10 blocks (scale = 1.0); farther = weaker, closer = stronger
+        float distanceScale = 10.0 / max(EffectWorldDist, 1.0);
+        float distortAmount = EffectStrength * 0.05 * falloff / dist * distanceScale;
         if (EffectType == 0) distortAmount *= 0.2;
         sampleCoord = clamp(texCoord + toCenter * distortAmount, 0.0, 1.0);
     }

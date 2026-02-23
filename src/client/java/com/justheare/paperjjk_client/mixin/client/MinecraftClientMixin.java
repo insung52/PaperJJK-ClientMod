@@ -112,7 +112,7 @@ public class MinecraftClientMixin {
             // Update RefractionConfig uniform buffer via CommandEncoder
             updateRefractionUniforms(processor,
                 (float) screenPos.x, (float) screenPos.y,
-                scaledRadius, effect.strength, effectTypeInt, effectDepth, time);
+                scaledRadius, effect.strength, effectTypeInt, effectDepth, time, distance);
 
             // Run the post-effect through MC's FrameGraphBuilder pipeline
             processor.render(mainFb, ObjectAllocator.TRIVIAL);
@@ -131,7 +131,8 @@ public class MinecraftClientMixin {
     private void updateRefractionUniforms(PostEffectProcessor processor,
                                            float centerX, float centerY,
                                            float radius, float strength,
-                                           int effectType, float effectDepth, float time) {
+                                           int effectType, float effectDepth, float time,
+                                           float worldDist) {
         try {
             // Find "passes" by type (List) — avoids hardcoded Yarn field name
             // that breaks in production where intermediary mapping is used.
@@ -168,27 +169,28 @@ public class MinecraftClientMixin {
 
             // USAGE_COPY_DST=8, USAGE_UNIFORM=128 → 136
             // Replace buffer if it lacks COPY_DST or is too small for current layout
-            // std140: vec2(8) + float(4) + float(4) + int(4) + float(4) + float(4) = 28 bytes
-            if ((buf.usage() & 8) == 0 || buf.size() < 28) {
+            // std140: vec2(8) + float(4) + float(4) + int(4) + float(4) + float(4) + float(4) = 32 bytes
+            if ((buf.usage() & 8) == 0 || buf.size() < 32) {
                 buf.close();
                 com.mojang.blaze3d.buffers.GpuBuffer newBuf =
                     com.mojang.blaze3d.systems.RenderSystem.getDevice()
-                        .createBuffer(() -> "JJK RefractionConfig", 8 | 128, 28);
+                        .createBuffer(() -> "JJK RefractionConfig", 8 | 128, 32);
                 uniformBuffers.put("RefractionConfig", newBuf);
                 buf = newBuf;
             }
 
-            // Write values — std140: vec2(8) + float(4) + float(4) + int(4) + float(4) + float(4) = 28 bytes
+            // Write values — std140: vec2(8) + float(4) + float(4) + int(4) + float(4) + float(4) + float(4) = 32 bytes
             org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush();
             try {
                 com.mojang.blaze3d.buffers.Std140Builder builder =
-                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 28);
+                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 32);
                 builder.putVec2(centerX, centerY);
                 builder.putFloat(radius);
                 builder.putFloat(strength);
                 builder.putInt(effectType);
                 builder.putFloat(effectDepth);
                 builder.putFloat(time);
+                builder.putFloat(worldDist);
                 com.mojang.blaze3d.systems.RenderSystem.getDevice()
                     .createCommandEncoder()
                     .writeToBuffer(buf.slice(), builder.get());
