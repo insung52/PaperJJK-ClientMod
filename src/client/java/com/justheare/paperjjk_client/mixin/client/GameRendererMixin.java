@@ -63,10 +63,12 @@ public class GameRendererMixin {
         if (effects.isEmpty() && !DomainEffectManager.isActive()) return;
 
         Camera camera = client.gameRenderer.getCamera();
+        // Use the actual dynamic FOV (includes sprint/fly/speed effect/bow draw modifiers)
+        // so world-to-screen projection matches what was used to render the world.
+        float dynamicFov = ((GameRendererAccessor) client.gameRenderer)
+            .invokeFov(camera, renderTickCounter.getDynamicDeltaTicks(), true);
         Matrix4f projectionMatrix = new Matrix4f(
-            client.gameRenderer.getBasicProjectionMatrix(
-                client.options.getFov().getValue().floatValue()
-            )
+            client.gameRenderer.getBasicProjectionMatrix(dynamicFov)
         );
 
         Framebuffer mainFb = client.getFramebuffer();
