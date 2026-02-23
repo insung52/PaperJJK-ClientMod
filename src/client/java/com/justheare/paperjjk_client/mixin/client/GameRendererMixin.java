@@ -2,6 +2,7 @@ package com.justheare.paperjjk_client.mixin.client;
 
 import com.justheare.paperjjk_client.render.DebugRenderer;
 import com.justheare.paperjjk_client.render.JJKDepthCache;
+import com.justheare.paperjjk_client.shader.DomainEffectManager;
 import com.justheare.paperjjk_client.shader.RefractionEffectManager;
 import com.justheare.paperjjk_client.util.WorldToScreenUtil;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -14,8 +15,10 @@ import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.util.ObjectAllocator;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fStack;
+import org.joml.Quaternionf;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -29,6 +32,9 @@ public class GameRendererMixin {
 
     private static final Identifier REFRACTION_EFFECT_ID =
         Identifier.of("paperjjk-client", "refraction");
+
+    private static final Identifier DOMAIN_EFFECT_ID =
+        Identifier.of("paperjjk-client", "domain");
 
     /**
      * Apply refraction post-processing BEFORE the HUD renders.
@@ -52,8 +58,9 @@ public class GameRendererMixin {
 
         RefractionEffectManager.tickEffects();
 
+        // Nothing to do if no effects of any kind are active
         List<RefractionEffectManager.RefractionEffect> effects = RefractionEffectManager.getEffects();
-        if (effects.isEmpty()) return;
+        if (effects.isEmpty() && !DomainEffectManager.isActive()) return;
 
         Camera camera = client.gameRenderer.getCamera();
         Matrix4f projectionMatrix = new Matrix4f(
@@ -62,32 +69,30 @@ public class GameRendererMixin {
             )
         );
 
-        PostEffectProcessor processor;
-        try {
-            processor = client.getShaderLoader().loadPostEffect(
-                REFRACTION_EFFECT_ID,
-                Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN)
-            );
-        } catch (Exception e) {
-            System.err.println("[JJKMixin] Failed to load refraction post effect: " + e.getMessage());
-            return;
-        }
-        if (processor == null) return;
-
         Framebuffer mainFb = client.getFramebuffer();
 
-        // Copy world depth (captured by WorldRendererMixin) into the main framebuffer's
-        // depth attachment so DepthSampler in the shader can do occlusion testing.
-        // The depth buffer was cleared for GUI rendering at this point, so we restore
-        // world depth specifically for our post-effect pass.
+        // Restore world depth from JJKDepthCache so DepthSampler works for occlusion.
+        // (The depth buffer was cleared for GUI rendering at this point.)
         Framebuffer worldDepthFb = JJKDepthCache.get();
         if (worldDepthFb != null && worldDepthFb.getDepthAttachment() != null
                 && mainFb.getDepthAttachment() != null) {
             mainFb.copyDepthFrom(worldDepthFb);
         }
 
-        for (RefractionEffectManager.RefractionEffect effect : effects) {
-            net.minecraft.util.math.Vec3d screenPos =
+        // ── Refraction effects (AO / AKA / MURASAKI) ─────────────────────────
+        if (!effects.isEmpty()) {
+            PostEffectProcessor processor;
+            try {
+                processor = client.getShaderLoader().loadPostEffect(
+                    REFRACTION_EFFECT_ID,
+                    Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN)
+                );
+            } catch (Exception e) {
+                System.err.println("[JJKMixin] Failed to load refraction post effect: " + e.getMessage());
+                processor = null;
+            }
+            if (processor != null) for (RefractionEffectManager.RefractionEffect effect : effects) {
+            Vec3d screenPos =
                 WorldToScreenUtil.worldToScreen(effect.worldPos, camera, projectionMatrix);
             if (screenPos == null) continue;
 
@@ -105,7 +110,42 @@ public class GameRendererMixin {
                 (float) screenPos.x, (float) screenPos.y,
                 scaledRadius, effect.strength, effectTypeInt, effectDepth, time, distance);
 
-            processor.render(mainFb, ObjectAllocator.TRIVIAL);
+                processor.render(mainFb, ObjectAllocator.TRIVIAL);
+            }
+        } // end refraction block
+
+        // ── Domain effect (간이영역) ──────────────────────────────────────────
+        if (DomainEffectManager.isActive()) {
+            PostEffectProcessor domainProcessor;
+            try {
+                domainProcessor = client.getShaderLoader().loadPostEffect(
+                    DOMAIN_EFFECT_ID,
+                    Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN)
+                );
+            } catch (Exception e) {
+                System.err.println("[JJKMixin] Failed to load domain post effect: " + e.getMessage());
+                return;
+            }
+            if (domainProcessor != null) {
+                // Inverse view-projection matrix for world-position reconstruction in shader
+                // View matrix = camera rotation only (no translation), positions are camera-relative
+                Matrix4f viewMatrix = new Matrix4f()
+                    .rotation(camera.getRotation().conjugate(new Quaternionf()));
+                Matrix4f invViewProj = projectionMatrix
+                    .mul(viewMatrix, new Matrix4f())
+                    .invert(new Matrix4f());
+
+                // Caster feet position relative to camera (avoids float precision issues)
+                Vec3d camPos = ((CameraAccessor) camera).getPos();
+                Vec3d feet   = DomainEffectManager.getCasterFeetPos();
+                float relX   = (float)(feet.x - camPos.x);
+                float relY   = (float)(feet.y - camPos.y);
+                float relZ   = (float)(feet.z - camPos.z);
+
+                updateDomainUniforms(domainProcessor, invViewProj, relX, relY, relZ,
+                    DomainEffectManager.getExpandRadius());
+                domainProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
+            }
         }
     }
 
@@ -175,6 +215,74 @@ public class GameRendererMixin {
             }
         } catch (Exception e) {
             System.err.println("[JJKMixin] updateRefractionUniforms failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Updates the DomainConfig uniform buffer.
+     *
+     * std140 layout:
+     *   vec4 InvViewProjC0..C3  → 4 * 16 = 64 bytes
+     *   vec4 CasterFeetPos      → 16 bytes  (.w = 0)
+     *   float ExpandRadius      →  4 bytes
+     *   Total                   = 84 bytes
+     */
+    @SuppressWarnings("unchecked")
+    private void updateDomainUniforms(PostEffectProcessor processor,
+                                       Matrix4f invViewProj,
+                                       float casterX, float casterY, float casterZ,
+                                       float expandRadius) {
+        try {
+            java.lang.reflect.Field passesField = null;
+            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
+                if (java.util.List.class.isAssignableFrom(f.getType())) { passesField = f; break; }
+            }
+            if (passesField == null) return;
+            passesField.setAccessible(true);
+            List<?> passes = (List<?>) passesField.get(processor);
+            if (passes.isEmpty()) return;
+            Object firstPass = passes.get(0);
+
+            java.lang.reflect.Field ubField = null;
+            for (java.lang.reflect.Field f : firstPass.getClass().getDeclaredFields()) {
+                if (java.util.Map.class.isAssignableFrom(f.getType())) { ubField = f; break; }
+            }
+            if (ubField == null) return;
+            ubField.setAccessible(true);
+            java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> ubs =
+                (java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>) ubField.get(firstPass);
+
+            com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("DomainConfig");
+            if (buf == null) return;
+
+            if ((buf.usage() & 8) == 0 || buf.size() < 84) {
+                buf.close();
+                com.mojang.blaze3d.buffers.GpuBuffer newBuf =
+                    RenderSystem.getDevice().createBuffer(() -> "JJK DomainConfig", 8 | 128, 84);
+                ubs.put("DomainConfig", newBuf);
+                buf = newBuf;
+            }
+
+            org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush();
+            try {
+                com.mojang.blaze3d.buffers.Std140Builder b =
+                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 84);
+                // InvViewProj as 4 column vec4s (column-major, matches GLSL mat4)
+                b.putVec4(invViewProj.m00(), invViewProj.m01(), invViewProj.m02(), invViewProj.m03());
+                b.putVec4(invViewProj.m10(), invViewProj.m11(), invViewProj.m12(), invViewProj.m13());
+                b.putVec4(invViewProj.m20(), invViewProj.m21(), invViewProj.m22(), invViewProj.m23());
+                b.putVec4(invViewProj.m30(), invViewProj.m31(), invViewProj.m32(), invViewProj.m33());
+                // CasterFeetPos as vec4 (.w = 0)
+                b.putVec4(casterX, casterY, casterZ, 0.0f);
+                // ExpandRadius
+                b.putFloat(expandRadius);
+                RenderSystem.getDevice().createCommandEncoder()
+                    .writeToBuffer(buf.slice(), b.get());
+            } finally {
+                stack.pop();
+            }
+        } catch (Exception e) {
+            System.err.println("[JJKMixin] updateDomainUniforms failed: " + e.getMessage());
         }
     }
 

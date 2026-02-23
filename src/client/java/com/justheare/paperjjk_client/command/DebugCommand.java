@@ -42,6 +42,9 @@ public class DebugCommand {
                 .then(literal("methods")
                     .executes(DebugCommand::inspectMethods)
                 )
+                .then(literal("simpledomain")
+                    .executes(DebugCommand::toggleSimpleDomain)
+                )
         );
     }
 
@@ -173,6 +176,30 @@ public class DebugCommand {
         context.getSource().sendFeedback(
             Text.literal("§e[PaperJJK Debug] §fGameRenderer methods logged to console")
         );
+        return 1;
+    }
+
+    private static int toggleSimpleDomain(CommandContext<FabricClientCommandSource> context) {
+        net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+        if (client.player == null) {
+            context.getSource().sendFeedback(Text.literal("§c[Error] No player found"));
+            return 0;
+        }
+
+        if (com.justheare.paperjjk_client.shader.DomainEffectManager.isActive()) {
+            com.justheare.paperjjk_client.shader.DomainEffectManager.deactivate();
+            context.getSource().sendFeedback(
+                Text.literal("§d[PaperJJK] §f간이영역 §cDEACTIVATED")
+            );
+        } else {
+            // Caster feet = player position (bottom of bounding box)
+            Vec3d feetPos = new Vec3d(client.player.getX(), client.player.getY(), client.player.getZ());
+            com.justheare.paperjjk_client.shader.DomainEffectManager.activate(feetPos);
+            context.getSource().sendFeedback(
+                Text.literal("§d[PaperJJK] §f간이영역 §aACTIVATED §fat §e" +
+                    String.format("(%.1f, %.1f, %.1f)", feetPos.x, feetPos.y, feetPos.z))
+            );
+        }
         return 1;
     }
 
