@@ -670,7 +670,7 @@ public class ClientPacketHandler {
 
             // Spawn crumble particles only when flagged (not for out-of-range penalty)
             if (spawnParticles) {
-                double delta = oldPower - power;
+                double delta = Math.max(oldPower - power,0.2);
                 delta = 2 * Math.PI * oldPower * delta;
                 if (delta > 0 && state != null && client.world != null) {
                     spawnCrumbleParticles(client, state, delta);
@@ -695,7 +695,7 @@ public class ClientPacketHandler {
             net.minecraft.util.math.random.Random.create();
 
         // 1 particle per ~2 power lost, capped at 16
-        int count = Math.max(1, Math.min(70, (int)(delta * 1.5)));
+        int count = Math.max(1, Math.min(70, (int)(delta * 0.1)));
 
         for (int i = 0; i < count; i++) {
             // Random angle around the ring

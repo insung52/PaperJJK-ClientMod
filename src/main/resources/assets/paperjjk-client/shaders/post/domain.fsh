@@ -25,7 +25,6 @@ const float GRAD_SCALE    = 3.0 / 2.0;  // outer gradient boundary = DarkRadius 
 // White ring parameters
 const float BORDER_WIDTH     = 0.3;   // smoothstep half-width in blocks
 const float INNER_BRIGHTNESS = 1.1;   // brightness inside the white circle
-const float RING_INTENSITY   = 1.5;   // peak intensity of the white ring glow
 
 void main() {
     vec4 color = texture(InSampler, texCoord);
@@ -79,9 +78,8 @@ void main() {
 
     float brightness = mix(1.0 - DarknessLevel * darkFactor, 1.0, emissiveExemption);
 
-    // ── White ring ─────────────────────────────────────────────────────────
-    // Only rendered when ExpandRadius > 0 (power > expansionDelay)
-    float ringGlow = 0.0;
+    // ── Inner bright zone ──────────────────────────────────────────────────
+    // Only active when ExpandRadius > 0 (power > expansionDelay)
     if (ExpandRadius > 0.001) {
         float insideFactor = 1.0 - smoothstep(
             ExpandRadius - BORDER_WIDTH,
@@ -92,11 +90,7 @@ void main() {
         // Inside the white circle: restore brightness to INNER_BRIGHTNESS
         // (overrides the dark zone within the circle)
         brightness = mix(brightness, INNER_BRIGHTNESS, insideFactor);
-
-        // Glowing ring at the boundary
-        float ringPeak = 1.0 - abs(insideFactor * 2.0 - 1.0);
-        ringGlow = pow(ringPeak, 2.5) * RING_INTENSITY;
     }
 
-    fragColor = vec4(color.rgb * brightness + vec3(ringGlow), color.a);
+    fragColor = vec4(color.rgb * brightness, color.a);
 }
