@@ -685,7 +685,7 @@ public class ClientPacketHandler {
             net.minecraft.util.math.random.Random.create();
 
         // 1 particle per ~2 power lost, capped at 16
-        int count = Math.max(1, Math.min(16, (int)(delta * 2.5)));
+        int count = Math.max(1, Math.min(70, (int)(delta * 1.5)));
 
         for (int i = 0; i < count; i++) {
             // Random angle around the ring

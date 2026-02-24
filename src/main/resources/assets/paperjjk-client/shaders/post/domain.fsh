@@ -41,7 +41,10 @@ void main() {
             float gradEnd = DarkRadius * GRAD_SCALE;
             skyDarkFactor = 1.0 - smoothstep(DarkRadius, gradEnd, camDist);
         }
-        fragColor = vec4(color.rgb * (1.0 - DarknessLevel * skyDarkFactor), color.a);
+        float skyLuma = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+        float skyExemption = smoothstep(0.85, 0.98, skyLuma);
+        float skyBrightness = mix(1.0 - DarknessLevel * skyDarkFactor, 1.0, skyExemption);
+        fragColor = vec4(color.rgb * skyBrightness, color.a);
         return;
     }
 
@@ -66,7 +69,15 @@ void main() {
         float gradEnd = DarkRadius * GRAD_SCALE;
         darkFactor = 1.0 - smoothstep(DarkRadius, gradEnd, horizDist);
     }
-    float brightness = 1.0 - DarknessLevel * darkFactor;
+
+    // ── Emissive/fullbright exemption ──────────────────────────────────────
+    // Pixels with very high luminance (fullbright particles, etc.) are exempt
+    // from darkening so they punch through the domain shadow.
+    // smoothstep(0.85, 0.98): luma < 0.85 → fully darkened, luma > 0.98 → fully exempt.
+    float luma = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+    float emissiveExemption = smoothstep(0.85, 0.98, luma);
+
+    float brightness = mix(1.0 - DarknessLevel * darkFactor, 1.0, emissiveExemption);
 
     // ── White ring ─────────────────────────────────────────────────────────
     // Only rendered when ExpandRadius > 0 (power > expansionDelay)

@@ -33,7 +33,7 @@ public class DomainParticle extends BillboardParticle {
         this.alpha = 1.0f;
 
         this.maxAge = 25 + this.random.nextInt(20); // 1.25–2.25 sec
-        this.scale  = 0.05f + this.random.nextFloat() * 0.2f; // 0.2–0.6
+        this.scale  = 0.03f + this.random.nextFloat() * 0.16f; // 0.2–0.6
 
         // Random initial z-rotation (0 ~ 2π)
         this.zRotation     = this.random.nextFloat() * (float)(Math.PI * 2.0);
@@ -74,6 +74,16 @@ public class DomainParticle extends BillboardParticle {
         this.velocityZ *= 0.96;
 
         this.move(this.velocityX, this.velocityY, this.velocityZ);
+    }
+
+    /**
+     * Fullbright: render at maximum light level regardless of world lighting.
+     * Iris/Optifine shader packs detect this as emissive and apply bloom.
+     * Value 0xF000F0 = LightmapTextureManager.MAX_LIGHT_COORDINATE (sky=15, block=15).
+     */
+    @Override
+    public int getBrightness(float ticks) {
+        return 0xF000F0;
     }
 
     @Override
