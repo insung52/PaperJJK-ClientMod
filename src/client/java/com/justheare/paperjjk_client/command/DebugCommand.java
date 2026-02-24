@@ -45,8 +45,14 @@ public class DebugCommand {
                 .then(literal("simpledomain")
                     .executes(DebugCommand::toggleSimpleDomain)
                 )
+                .then(literal("particle")
+                    .executes(DebugCommand::toggleParticleTest)
+                )
         );
     }
+
+    /** Toggle flag — PaperJJKClientClient tick handler reads this to spawn particles */
+    public static volatile boolean particleTestActive = false;
 
     private static int toggleRender(CommandContext<FabricClientCommandSource> context) {
         DebugRenderer.toggleCube();
@@ -200,6 +206,14 @@ public class DebugCommand {
                     String.format("(%.1f, %.1f, %.1f)", feetPos.x, feetPos.y, feetPos.z))
             );
         }
+        return 1;
+    }
+
+    private static int toggleParticleTest(CommandContext<FabricClientCommandSource> context) {
+        particleTestActive = !particleTestActive;
+        context.getSource().sendFeedback(
+            Text.literal("§d[PaperJJK] §f파티클 테스트 §" + (particleTestActive ? "aON" : "cOFF"))
+        );
         return 1;
     }
 

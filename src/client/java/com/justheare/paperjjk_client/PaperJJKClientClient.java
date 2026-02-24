@@ -6,12 +6,15 @@ import com.justheare.paperjjk_client.command.SkillConfigCommand;
 import com.justheare.paperjjk_client.data.ClientGameData;
 import com.justheare.paperjjk_client.keybind.JJKKeyBinds;
 import com.justheare.paperjjk_client.network.ClientPacketHandler;
+import com.justheare.paperjjk_client.particle.DomainParticle;
+import com.justheare.paperjjk_client.particle.ModParticles;
 import com.justheare.paperjjk_client.render.DebugRenderer;
 // import com.justheare.paperjjk_client.render.DomainRenderer;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.fabric.api.client.particle.v1.ParticleFactoryRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
@@ -41,7 +44,12 @@ public class PaperJJKClientClient implements ClientModInitializer {
 		LOGGER.info("  버전: 1.0.0 | 프로토콜: {}", PROTOCOL_VERSION);
 		LOGGER.info("========================================");
 
-		// 1. Payload 타입 등록
+		// 1. 커스텀 파티클 타입 등록 (ParticleFactoryRegistry보다 먼저 해야 함)
+		LOGGER.info("[0/5] 커스텀 파티클 등록 중...");
+		ModParticles.register();
+		ParticleFactoryRegistry.getInstance().register(ModParticles.DOMAIN_FRAGMENT, DomainParticle.Factory::new);
+
+		// 2. Payload 타입 등록
 		LOGGER.info("[1/5] Payload 타입 등록 중...");
 		PayloadTypeRegistry.playC2S().register(
 			JJKKeyBinds.JJKPayload.ID,
@@ -109,9 +117,30 @@ public class PaperJJKClientClient implements ClientModInitializer {
 
 		// Post-processing은 이제 GameRendererMixin에서 처리됩니다 (Iris처럼 renderLevel의 TAIL에 injection)
 
-		// 클라이언트 틱 이벤트: 도메인 반지름 업데이트
+		// 클라이언트 틱 이벤트: 도메인 반지름 업데이트 + 파티클 테스트
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			ClientGameData.updateAllDomains();
+
+			// /jjkdebug particle 활성화 시 플레이어 주변에 파티클 스폰
+			if (DebugCommand.particleTestActive && client.world != null && client.player != null) {
+				double px = client.player.getX();
+				double py = client.player.getY() + 1.0;
+				double pz = client.player.getZ();
+				net.minecraft.util.math.random.Random rng = client.player.getRandom();
+
+				// 틱마다 2개 스폰, 랜덤 방향으로 약간의 수평 속도
+				for (int i = 0; i < 2; i++) {
+					double vx = (rng.nextDouble() - 0.5) * 0.12;
+					double vz = (rng.nextDouble() - 0.5) * 0.12;
+					client.particleManager.addParticle(
+						ModParticles.DOMAIN_FRAGMENT,
+						px + (rng.nextDouble() - 0.5) * 0.5,
+						py,
+						pz + (rng.nextDouble() - 0.5) * 0.5,
+						vx, 0.0, vz
+					);
+				}
+			}
 		});
 	}
 }
