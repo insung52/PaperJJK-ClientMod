@@ -595,64 +595,79 @@ public class ClientPacketHandler {
 
     /**
      * SIMPLE_DOMAIN_ACTIVATE (0x21) - Domain activated (fresh start)
-     * Format: [locX(8)][locY(8)][locZ(8)][power(8)]
+     * Format: [locX(8)][locY(8)][locZ(8)][power(8)][expansionDelay(4)][maxPower(4)][casterUUIDMost(8)][casterUUIDLeast(8)]
      */
     private static void handleSimpleDomainActivate(MinecraftClient client, PacketByteBuf buf) {
-        double locX          = buf.readDouble();
-        double locY          = buf.readDouble();
-        double locZ          = buf.readDouble();
-        double power         = buf.readDouble();
+        double locX           = buf.readDouble();
+        double locY           = buf.readDouble();
+        double locZ           = buf.readDouble();
+        double power          = buf.readDouble();
         int    expansionDelay = buf.readInt();
         int    maxPower       = buf.readInt();
+        long   uuidMost       = buf.readLong();
+        long   uuidLeast      = buf.readLong();
+        java.util.UUID casterUuid = new java.util.UUID(uuidMost, uuidLeast);
 
         client.execute(() -> {
+            boolean isLocalCaster = client.player != null && casterUuid.equals(client.player.getUuid());
             net.minecraft.util.math.Vec3d feetPos = new net.minecraft.util.math.Vec3d(locX, locY, locZ);
-            com.justheare.paperjjk_client.shader.DomainEffectManager.onActivate(feetPos, power, expansionDelay, maxPower);
-            LOGGER.info("[Simple Domain] ACTIVATE: pos=({},{},{}), power={}, expansionDelay={}, maxPower={}",
+            com.justheare.paperjjk_client.shader.DomainEffectManager.onActivate(
+                casterUuid, feetPos, power, expansionDelay, maxPower, isLocalCaster);
+            LOGGER.info("[Simple Domain] ACTIVATE: pos=({},{},{}), power={}, expansionDelay={}, maxPower={}, caster={}, local={}",
                 String.format("%.2f", locX), String.format("%.2f", locY),
-                String.format("%.2f", locZ), String.format("%.1f", power), expansionDelay, maxPower);
+                String.format("%.2f", locZ), String.format("%.1f", power), expansionDelay, maxPower, casterUuid, isLocalCaster);
         });
     }
 
     /**
      * SIMPLE_DOMAIN_CHARGING_END (0x22) - Charging stopped, power preserved
-     * Format: [power(8)][locX(8)][locY(8)][locZ(8)]
+     * Format: [power(8)][locX(8)][locY(8)][locZ(8)][casterUUIDMost(8)][casterUUIDLeast(8)]
      */
     private static void handleSimpleDomainChargingEnd(MinecraftClient client, PacketByteBuf buf) {
-        double power = buf.readDouble();
-        double locX  = buf.readDouble();
-        double locY  = buf.readDouble();
-        double locZ  = buf.readDouble();
+        double power     = buf.readDouble();
+        double locX      = buf.readDouble();
+        double locY      = buf.readDouble();
+        double locZ      = buf.readDouble();
+        long   uuidMost  = buf.readLong();
+        long   uuidLeast = buf.readLong();
+        java.util.UUID casterUuid = new java.util.UUID(uuidMost, uuidLeast);
 
         client.execute(() -> {
-            com.justheare.paperjjk_client.shader.DomainEffectManager.onChargingEnd(power, locX, locY, locZ);
-            LOGGER.info("[Simple Domain] CHARGING_END: power={}, loc=({},{},{})",
+            com.justheare.paperjjk_client.shader.DomainEffectManager.onChargingEnd(casterUuid, power, locX, locY, locZ);
+            LOGGER.info("[Simple Domain] CHARGING_END: power={}, loc=({},{},{}), caster={}",
                 String.format("%.1f", power),
-                String.format("%.2f", locX), String.format("%.2f", locY), String.format("%.2f", locZ));
+                String.format("%.2f", locX), String.format("%.2f", locY), String.format("%.2f", locZ), casterUuid);
         });
     }
 
     /**
      * SIMPLE_DOMAIN_POWER_SYNC (0x23) - Authoritative power correction
-     * Format: [power(8)]
+     * Format: [power(8)][casterUUIDMost(8)][casterUUIDLeast(8)]
      */
     private static void handleSimpleDomainPowerSync(MinecraftClient client, PacketByteBuf buf) {
-        double power = buf.readDouble();
+        double power     = buf.readDouble();
+        long   uuidMost  = buf.readLong();
+        long   uuidLeast = buf.readLong();
+        java.util.UUID casterUuid = new java.util.UUID(uuidMost, uuidLeast);
 
         client.execute(() -> {
-            com.justheare.paperjjk_client.shader.DomainEffectManager.onPowerSync(power);
-            LOGGER.debug("[Simple Domain] POWER_SYNC: power={}", String.format("%.1f", power));
+            com.justheare.paperjjk_client.shader.DomainEffectManager.onPowerSync(casterUuid, power);
+            LOGGER.debug("[Simple Domain] POWER_SYNC: power={}, caster={}", String.format("%.1f", power), casterUuid);
         });
     }
 
     /**
      * SIMPLE_DOMAIN_DEACTIVATE (0x24) - Domain deactivated (power reached 0)
-     * Format: (no payload)
+     * Format: [casterUUIDMost(8)][casterUUIDLeast(8)]
      */
     private static void handleSimpleDomainDeactivate(MinecraftClient client, PacketByteBuf buf) {
+        long   uuidMost  = buf.readLong();
+        long   uuidLeast = buf.readLong();
+        java.util.UUID casterUuid = new java.util.UUID(uuidMost, uuidLeast);
+
         client.execute(() -> {
-            com.justheare.paperjjk_client.shader.DomainEffectManager.onDeactivate();
-            LOGGER.info("[Simple Domain] DEACTIVATE");
+            com.justheare.paperjjk_client.shader.DomainEffectManager.onDeactivate(casterUuid);
+            LOGGER.info("[Simple Domain] DEACTIVATE: caster={}", casterUuid);
         });
     }
 

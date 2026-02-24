@@ -186,15 +186,15 @@ public class DebugCommand {
             return 0;
         }
 
-        if (com.justheare.paperjjk_client.shader.DomainEffectManager.isActive()) {
-            com.justheare.paperjjk_client.shader.DomainEffectManager.deactivate();
+        if (com.justheare.paperjjk_client.shader.DomainEffectManager.hasActiveDomains()) {
+            com.justheare.paperjjk_client.shader.DomainEffectManager.deactivate(client.player.getUuid());
             context.getSource().sendFeedback(
                 Text.literal("§d[PaperJJK] §f간이영역 §cDEACTIVATED")
             );
         } else {
             // Caster feet = player position (bottom of bounding box)
             Vec3d feetPos = new Vec3d(client.player.getX(), client.player.getY(), client.player.getZ());
-            com.justheare.paperjjk_client.shader.DomainEffectManager.activate(feetPos);
+            com.justheare.paperjjk_client.shader.DomainEffectManager.activate(feetPos, client.player.getUuid());
             context.getSource().sendFeedback(
                 Text.literal("§d[PaperJJK] §f간이영역 §aACTIVATED §fat §e" +
                     String.format("(%.1f, %.1f, %.1f)", feetPos.x, feetPos.y, feetPos.z))

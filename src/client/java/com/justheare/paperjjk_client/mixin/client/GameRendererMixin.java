@@ -60,7 +60,7 @@ public class GameRendererMixin {
 
         // Nothing to do if no effects of any kind are active
         List<RefractionEffectManager.RefractionEffect> effects = RefractionEffectManager.getEffects();
-        if (effects.isEmpty() && !DomainEffectManager.isActive()) return;
+        if (effects.isEmpty() && !DomainEffectManager.hasActiveDomains()) return;
 
         Camera camera = client.gameRenderer.getCamera();
         // Use the actual dynamic FOV (includes sprint/fly/speed effect/bow draw modifiers)
@@ -116,42 +116,54 @@ public class GameRendererMixin {
             }
         } // end refraction block
 
-        // ── Domain effect (간이영역) ──────────────────────────────────────────
-        if (DomainEffectManager.isActive()) {
-            // Interpolate caster position toward player while charging (mirrors server tick)
+        // ── Domain effect (간이영역) — one render pass per active domain ────────
+        if (DomainEffectManager.hasActiveDomains()) {
             Vec3d playerFeet = new Vec3d(client.player.getX(), client.player.getY(), client.player.getZ());
-            DomainEffectManager.tickPosition(playerFeet, renderTickCounter.getDynamicDeltaTicks());
+            float deltaTicks = renderTickCounter.getDynamicDeltaTicks();
 
-            PostEffectProcessor domainProcessor;
-            try {
-                domainProcessor = client.getShaderLoader().loadPostEffect(
-                    DOMAIN_EFFECT_ID,
-                    Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN)
-                );
-            } catch (Exception e) {
-                System.err.println("[JJKMixin] Failed to load domain post effect: " + e.getMessage());
-                return;
-            }
-            if (domainProcessor != null) {
-                // Inverse view-projection matrix for world-position reconstruction in shader
-                // View matrix = camera rotation only (no translation), positions are camera-relative
-                Matrix4f viewMatrix = new Matrix4f()
-                    .rotation(camera.getRotation().conjugate(new Quaternionf()));
-                Matrix4f invViewProj = projectionMatrix
-                    .mul(viewMatrix, new Matrix4f())
-                    .invert(new Matrix4f());
+            // Compute shared matrices once for all domains
+            Matrix4f viewMatrix = new Matrix4f()
+                .rotation(camera.getRotation().conjugate(new Quaternionf()));
+            Matrix4f invViewProj = projectionMatrix
+                .mul(viewMatrix, new Matrix4f())
+                .invert(new Matrix4f());
+            Vec3d camPos = ((CameraAccessor) camera).getPos();
 
-                // Caster feet position relative to camera (avoids float precision issues)
-                Vec3d camPos = ((CameraAccessor) camera).getPos();
-                Vec3d feet   = DomainEffectManager.getCasterFeetPos();
-                float relX   = (float)(feet.x - camPos.x);
-                float relY   = (float)(feet.y - camPos.y);
-                float relZ   = (float)(feet.z - camPos.z);
+            for (DomainEffectManager.DomainState domain : DomainEffectManager.getActiveDomains()) {
+                // Track domain center toward the caster's current position
+                if (domain.isLocalPlayerCaster) {
+                    domain.tickPosition(playerFeet, deltaTicks);
+                } else {
+                    // Look up the caster entity in the world (visible within render distance)
+                    net.minecraft.entity.player.PlayerEntity casterEntity =
+                        client.world.getPlayerByUuid(domain.casterUuid);
+                    if (casterEntity != null) {
+                        Vec3d casterFeet = new Vec3d(casterEntity.getX(), casterEntity.getY(), casterEntity.getZ());
+                        domain.tickPosition(casterFeet, deltaTicks);
+                    }
+                }
+
+                PostEffectProcessor domainProcessor;
+                try {
+                    domainProcessor = client.getShaderLoader().loadPostEffect(
+                        DOMAIN_EFFECT_ID,
+                        Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN)
+                    );
+                } catch (Exception e) {
+                    System.err.println("[JJKMixin] Failed to load domain post effect: " + e.getMessage());
+                    continue;
+                }
+                if (domainProcessor == null) continue;
+
+                Vec3d feet = domain.casterFeetPos;
+                float relX = (float)(feet.x - camPos.x);
+                float relY = (float)(feet.y - camPos.y);
+                float relZ = (float)(feet.z - camPos.z);
 
                 updateDomainUniforms(domainProcessor, invViewProj, relX, relY, relZ,
-                    DomainEffectManager.getExpandRadius(),
-                    DomainEffectManager.getDarkRadius(),
-                    DomainEffectManager.getDarknessLevel());
+                    domain.getExpandRadius(),
+                    domain.getDarkRadius(),
+                    domain.getDarknessLevel());
                 domainProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
             }
         }

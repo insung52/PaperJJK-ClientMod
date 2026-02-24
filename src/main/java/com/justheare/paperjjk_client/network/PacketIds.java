@@ -150,10 +150,10 @@ public class PacketIds {
 
     /**
      * Simple Domain Packet format:
-     * SIMPLE_DOMAIN_ACTIVATE    (0x21): [locX(8)][locY(8)][locZ(8)][power(8)][expansionDelay(4)][maxPower(4)]  — caster feet pos + initial power + thresholds
-     * SIMPLE_DOMAIN_CHARGING_END(0x22): [power(8)][locX(8)][locY(8)][locZ(8)]  — current power + final caster pos when charging stops
-     * SIMPLE_DOMAIN_POWER_SYNC  (0x23): [power(8)]                              — corrected power value
-     * SIMPLE_DOMAIN_DEACTIVATE  (0x24): (no payload)                            — power hit 0
+     * SIMPLE_DOMAIN_ACTIVATE    (0x21): [locX(8)][locY(8)][locZ(8)][power(8)][expansionDelay(4)][maxPower(4)][casterUUIDMost(8)][casterUUIDLeast(8)]  — caster feet pos + initial power + thresholds + caster UUID
+     * SIMPLE_DOMAIN_CHARGING_END(0x22): [power(8)][locX(8)][locY(8)][locZ(8)][casterUUIDMost(8)][casterUUIDLeast(8)]
+     * SIMPLE_DOMAIN_POWER_SYNC  (0x23): [power(8)][casterUUIDMost(8)][casterUUIDLeast(8)]
+     * SIMPLE_DOMAIN_DEACTIVATE  (0x24): [casterUUIDMost(8)][casterUUIDLeast(8)]
      */
 
     /**
