@@ -1,5 +1,7 @@
 {
     "textures": [
-        "paperjjk-client:simpledomain_frag_0"
+        "paperjjk-client:simpledomain_frag_0",
+        "paperjjk-client:simpledomain_frag_1",
+        "paperjjk-client:simpledomain_frag_2"
     ]
 }
