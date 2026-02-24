@@ -597,7 +597,8 @@ public class ClientPacketHandler {
 
     /**
      * SIMPLE_DOMAIN_ACTIVATE (0x21) - Domain activated (fresh start)
-     * Format: [locX(8)][locY(8)][locZ(8)][power(8)][expansionDelay(4)][maxPower(4)][casterUUIDMost(8)][casterUUIDLeast(8)]
+     * Format: [locX(8)][locY(8)][locZ(8)][power(8)][expansionDelay(4)][maxPower(4)]
+     *         [chargeRate(8)][baseDecayRate(8)][maxRadius(8)][casterUUIDMost(8)][casterUUIDLeast(8)]
      */
     private static void handleSimpleDomainActivate(MinecraftClient client, PacketByteBuf buf) {
         double locX           = buf.readDouble();
@@ -606,6 +607,9 @@ public class ClientPacketHandler {
         double power          = buf.readDouble();
         int    expansionDelay = buf.readInt();
         int    maxPower       = buf.readInt();
+        double chargeRate     = buf.readDouble();
+        double baseDecayRate  = buf.readDouble();
+        double maxRadius      = buf.readDouble();
         long   uuidMost       = buf.readLong();
         long   uuidLeast      = buf.readLong();
         java.util.UUID casterUuid = new java.util.UUID(uuidMost, uuidLeast);
@@ -614,10 +618,12 @@ public class ClientPacketHandler {
             boolean isLocalCaster = client.player != null && casterUuid.equals(client.player.getUuid());
             net.minecraft.util.math.Vec3d feetPos = new net.minecraft.util.math.Vec3d(locX, locY, locZ);
             com.justheare.paperjjk_client.shader.DomainEffectManager.onActivate(
-                casterUuid, feetPos, power, expansionDelay, maxPower, isLocalCaster);
-            LOGGER.info("[Simple Domain] ACTIVATE: pos=({},{},{}), power={}, expansionDelay={}, maxPower={}, caster={}, local={}",
-                String.format("%.2f", locX), String.format("%.2f", locY),
-                String.format("%.2f", locZ), String.format("%.1f", power), expansionDelay, maxPower, casterUuid, isLocalCaster);
+                casterUuid, feetPos, power, expansionDelay, maxPower, chargeRate, baseDecayRate, maxRadius, isLocalCaster);
+            LOGGER.info("[Simple Domain] ACTIVATE: pos=({},{},{}), power={}, expansionDelay={}, maxPower={}, chargeRate={}, decayRate={}, maxRadius={}, caster={}, local={}",
+                String.format("%.2f", locX), String.format("%.2f", locY), String.format("%.2f", locZ),
+                String.format("%.1f", power), expansionDelay, maxPower,
+                String.format("%.1f", chargeRate), String.format("%.2f", baseDecayRate), String.format("%.1f", maxRadius),
+                casterUuid, isLocalCaster);
         });
     }
 
@@ -644,12 +650,13 @@ public class ClientPacketHandler {
 
     /**
      * SIMPLE_DOMAIN_POWER_SYNC (0x23) - Authoritative power correction
-     * Format: [power(8)][casterUUIDMost(8)][casterUUIDLeast(8)]
+     * Format: [power(8)][spawnParticles(1)][casterUUIDMost(8)][casterUUIDLeast(8)]
      */
     private static void handleSimpleDomainPowerSync(MinecraftClient client, PacketByteBuf buf) {
-        double power     = buf.readDouble();
-        long   uuidMost  = buf.readLong();
-        long   uuidLeast = buf.readLong();
+        double  power          = buf.readDouble();
+        boolean spawnParticles = buf.readBoolean();
+        long    uuidMost       = buf.readLong();
+        long    uuidLeast      = buf.readLong();
         java.util.UUID casterUuid = new java.util.UUID(uuidMost, uuidLeast);
 
         client.execute(() -> {
@@ -658,13 +665,16 @@ public class ClientPacketHandler {
             double oldPower = (state != null) ? state.currentPower : power;
 
             DomainEffectManager.onPowerSync(casterUuid, power);
-            LOGGER.debug("[Simple Domain] POWER_SYNC: power={}, caster={}", String.format("%.1f", power), casterUuid);
+            LOGGER.debug("[Simple Domain] POWER_SYNC: power={}, particles={}, caster={}",
+                String.format("%.1f", power), spawnParticles, casterUuid);
 
-            // Spawn crumble particles when power decreases (domain under attack)
-            double delta = oldPower - power;
-            delta = 2 * Math.PI * oldPower * delta;
-            if (delta > 0 && state != null && client.world != null) {
-                spawnCrumbleParticles(client, state, delta);
+            // Spawn crumble particles only when flagged (not for out-of-range penalty)
+            if (spawnParticles) {
+                double delta = oldPower - power;
+                delta = 2 * Math.PI * oldPower * delta;
+                if (delta > 0 && state != null && client.world != null) {
+                    spawnCrumbleParticles(client, state, delta);
+                }
             }
         });
     }

@@ -24,9 +24,10 @@ import java.util.UUID;
  */
 public class DomainEffectManager {
 
-    public static final float MAX_RADIUS              = 10.0f;
-    public static final float BASE_DECAY_RATE         = 0.8f;
-    public static final float CHARGE_RATE             = 10.0f;
+    // Fallback defaults (used only by /jjkdebug simpledomain)
+    public static final float DEFAULT_MAX_RADIUS      = 10.0f;
+    public static final float DEFAULT_BASE_DECAY_RATE = 0.8f;
+    public static final float DEFAULT_CHARGE_RATE     = 7.0f;
     public static final int   DEFAULT_EXPANSION_DELAY = 100;
     public static final int   DEFAULT_MAX_POWER       = 230;
 
@@ -36,15 +37,20 @@ public class DomainEffectManager {
         /** True if this domain belongs to the local player. Only this domain uses tickPosition. */
         public final boolean isLocalPlayerCaster;
 
-        public Vec3d  casterFeetPos;
+        public Vec3d   casterFeetPos;
         public boolean isCharging;
         public double  currentPower;
         public long    lastSyncTimeMs;
         public int     expansionDelay;
         public int     maxPower;
+        /** Server-authoritative simulation constants (synced via ACTIVATE packet). */
+        public double  chargeRate;
+        public double  baseDecayRate;
+        public double  maxRadius;
 
         DomainState(UUID casterUuid, boolean isLocalPlayerCaster,
-                    Vec3d feetPos, double power, int expDelay, int maxPow) {
+                    Vec3d feetPos, double power, int expDelay, int maxPow,
+                    double chargeRate, double baseDecayRate, double maxRadius) {
             this.casterUuid          = casterUuid;
             this.isLocalPlayerCaster = isLocalPlayerCaster;
             this.casterFeetPos       = feetPos;
@@ -52,6 +58,9 @@ public class DomainEffectManager {
             this.currentPower        = power;
             this.expansionDelay      = expDelay;
             this.maxPower            = maxPow;
+            this.chargeRate          = chargeRate;
+            this.baseDecayRate       = baseDecayRate;
+            this.maxRadius           = maxRadius;
             this.lastSyncTimeMs      = System.currentTimeMillis();
         }
 
@@ -72,9 +81,9 @@ public class DomainEffectManager {
         private double getSimulatedPower() {
             double elapsedTicks = (System.currentTimeMillis() - lastSyncTimeMs) / 1000.0 * 20.0;
             if (isCharging) {
-                return Math.min(maxPower, currentPower + CHARGE_RATE * elapsedTicks);
+                return Math.min(maxPower, currentPower + chargeRate * elapsedTicks);
             } else {
-                return Math.max(0.0, currentPower - BASE_DECAY_RATE * elapsedTicks);
+                return Math.max(0.0, currentPower - baseDecayRate * elapsedTicks);
             }
         }
 
@@ -82,13 +91,13 @@ public class DomainEffectManager {
             double p = getSimulatedPower();
             double circleRange = maxPower - expansionDelay;
             if (circleRange <= 0) return 0.0f;
-            return (float) (Math.max(0.0, (p - expansionDelay) / circleRange) * MAX_RADIUS);
+            return (float) (Math.max(0.0, (p - expansionDelay) / circleRange) * maxRadius);
         }
 
         public float getDarkRadius() {
             double p = getSimulatedPower();
-            if (expansionDelay <= 0) return MAX_RADIUS * 3.0f;
-            return (float) (Math.min(p / expansionDelay, 1.0) * MAX_RADIUS * 2.0);
+            if (expansionDelay <= 0) return (float)(maxRadius * 3.0);
+            return (float) (Math.min(p / expansionDelay, 1.0) * maxRadius * 2.0);
         }
 
         public float getDarknessLevel() {
@@ -105,16 +114,21 @@ public class DomainEffectManager {
 
     /** SIMPLE_DOMAIN_ACTIVATE (0x21) */
     public static void onActivate(UUID casterUuid, Vec3d feetPos, double power,
-                                  int expDelay, int maxPow, boolean isLocalCaster) {
+                                  int expDelay, int maxPow,
+                                  double chargeRate, double baseDecayRate, double maxRadius,
+                                  boolean isLocalCaster) {
         DomainState state = domains.get(casterUuid);
         if (state != null) {
-            // Re-activate: update position/power, resume charging
+            // Re-activate: update position/power/rates, resume charging
             state.casterFeetPos  = feetPos;
             state.isCharging     = true;
             state.currentPower   = power;
+            state.chargeRate     = chargeRate;
+            state.baseDecayRate  = baseDecayRate;
+            state.maxRadius      = maxRadius;
             state.lastSyncTimeMs = System.currentTimeMillis();
         } else {
-            domains.put(casterUuid, new DomainState(casterUuid, isLocalCaster, feetPos, power, expDelay, maxPow));
+            domains.put(casterUuid, new DomainState(casterUuid, isLocalCaster, feetPos, power, expDelay, maxPow, chargeRate, baseDecayRate, maxRadius));
         }
     }
 
@@ -144,7 +158,8 @@ public class DomainEffectManager {
     // ── Debug shim (/jjkdebug simpledomain) ────────────────────────────────
 
     public static void activate(Vec3d feetPos, UUID localPlayerUuid) {
-        onActivate(localPlayerUuid, feetPos, 0.0, DEFAULT_EXPANSION_DELAY, DEFAULT_MAX_POWER, true);
+        onActivate(localPlayerUuid, feetPos, 0.0, DEFAULT_EXPANSION_DELAY, DEFAULT_MAX_POWER,
+                   DEFAULT_CHARGE_RATE, DEFAULT_BASE_DECAY_RATE, DEFAULT_MAX_RADIUS, true);
     }
 
     public static void deactivate(UUID localPlayerUuid) {
