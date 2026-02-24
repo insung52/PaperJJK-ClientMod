@@ -37,11 +37,11 @@ public class DomainEffectManager {
         public final boolean isLocalPlayerCaster;
 
         public Vec3d  casterFeetPos;
-        boolean       isCharging;
-        double        currentPower;
-        long          lastSyncTimeMs;
-        int           expansionDelay;
-        int           maxPower;
+        public boolean isCharging;
+        public double  currentPower;
+        public long    lastSyncTimeMs;
+        public int     expansionDelay;
+        public int     maxPower;
 
         DomainState(UUID casterUuid, boolean isLocalPlayerCaster,
                     Vec3d feetPos, double power, int expDelay, int maxPow) {
@@ -156,4 +156,7 @@ public class DomainEffectManager {
     public static boolean hasActiveDomains() { return !domains.isEmpty(); }
 
     public static Collection<DomainState> getActiveDomains() { return domains.values(); }
+
+    /** Returns domain state for the given caster, or null if not active. */
+    public static DomainState getDomain(UUID casterUuid) { return domains.get(casterUuid); }
 }

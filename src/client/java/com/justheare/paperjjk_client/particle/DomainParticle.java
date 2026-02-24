@@ -33,7 +33,7 @@ public class DomainParticle extends BillboardParticle {
         this.alpha = 1.0f;
 
         this.maxAge = 25 + this.random.nextInt(20); // 1.25–2.25 sec
-        this.scale  = 0.02f + this.random.nextFloat() * 0.1f; // 0.2–0.6
+        this.scale  = 0.05f + this.random.nextFloat() * 0.2f; // 0.2–0.6
 
         // Random initial z-rotation (0 ~ 2π)
         this.zRotation     = this.random.nextFloat() * (float)(Math.PI * 2.0);

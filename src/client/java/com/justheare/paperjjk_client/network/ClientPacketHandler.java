@@ -2,6 +2,8 @@ package com.justheare.paperjjk_client.network;
 
 import com.justheare.paperjjk_client.data.ClientGameData;
 import com.justheare.paperjjk_client.network.packets.*;
+import com.justheare.paperjjk_client.particle.ModParticles;
+import com.justheare.paperjjk_client.shader.DomainEffectManager;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.client.MinecraftClient;
@@ -651,9 +653,62 @@ public class ClientPacketHandler {
         java.util.UUID casterUuid = new java.util.UUID(uuidMost, uuidLeast);
 
         client.execute(() -> {
-            com.justheare.paperjjk_client.shader.DomainEffectManager.onPowerSync(casterUuid, power);
+            // Capture old power before sync to compute delta
+            DomainEffectManager.DomainState state = DomainEffectManager.getDomain(casterUuid);
+            double oldPower = (state != null) ? state.currentPower : power;
+
+            DomainEffectManager.onPowerSync(casterUuid, power);
             LOGGER.debug("[Simple Domain] POWER_SYNC: power={}, caster={}", String.format("%.1f", power), casterUuid);
+
+            // Spawn crumble particles when power decreases (domain under attack)
+            double delta = oldPower - power;
+            delta = 2 * Math.PI * oldPower * delta;
+            if (delta > 0 && state != null && client.world != null) {
+                spawnCrumbleParticles(client, state, delta);
+            }
         });
+    }
+
+    /**
+     * Spawns crumble/shard particles at the white circle edge.
+     * Called when power decreases (delta > 0).
+     * Particle count scales with how fast power dropped.
+     */
+    private static void spawnCrumbleParticles(MinecraftClient client,
+                                              DomainEffectManager.DomainState state,
+                                              double delta) {
+        float radius = state.getExpandRadius();
+        if (radius < 0.3f) return; // White circle not visible yet
+
+        net.minecraft.util.math.Vec3d center = state.casterFeetPos;
+        net.minecraft.util.math.random.Random rng =
+            net.minecraft.util.math.random.Random.create();
+
+        // 1 particle per ~2 power lost, capped at 16
+        int count = Math.max(1, Math.min(16, (int)(delta * 2.5)));
+
+        for (int i = 0; i < count; i++) {
+            // Random angle around the ring
+            double angle = rng.nextDouble() * Math.PI * 2.0;
+            // Tiny radial jitter so particles aren't all exactly on the edge
+            double r = radius + (rng.nextDouble() - 0.5) * 0.4;
+
+            double px = center.x + r * Math.cos(angle);
+            double py = center.y + rng.nextDouble() * 0.5;
+            double pz = center.z + r * Math.sin(angle);
+
+            // Outward burst + upward drift
+            double outward = 0.02 + rng.nextDouble() * 0.06;
+            double vx = Math.cos(angle) * outward;
+            double vz = Math.sin(angle) * outward;
+            double vy = 0.04 + rng.nextDouble() * 0.05;
+
+            client.particleManager.addParticle(
+                ModParticles.DOMAIN_FRAGMENT,
+                px, py, pz,
+                vx, vy, vz
+            );
+        }
     }
 
     /**
