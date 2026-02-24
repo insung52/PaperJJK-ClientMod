@@ -18,9 +18,9 @@ layout(std140) uniform DomainConfig {
 in vec2 texCoord;
 out vec4 fragColor;
 
-// Gradient zone width = DarkRadius * (4/3 - 1) = DarkRadius/3
-// i.e. gradient spans DarkRadius to DarkRadius*(4/3)
-const float GRAD_SCALE    = 4.0 / 3.0;  // outer gradient boundary = DarkRadius * GRAD_SCALE
+// Gradient zone width = DarkRadius * (3/2 - 1) = DarkRadius/2
+// i.e. gradient spans DarkRadius to DarkRadius*(3/2)
+const float GRAD_SCALE    = 3.0 / 2.0;  // outer gradient boundary = DarkRadius * GRAD_SCALE
 
 // White ring parameters
 const float BORDER_WIDTH     = 0.3;   // smoothstep half-width in blocks

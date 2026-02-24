@@ -118,6 +118,10 @@ public class GameRendererMixin {
 
         // ── Domain effect (간이영역) ──────────────────────────────────────────
         if (DomainEffectManager.isActive()) {
+            // Interpolate caster position toward player while charging (mirrors server tick)
+            Vec3d playerFeet = new Vec3d(client.player.getX(), client.player.getY(), client.player.getZ());
+            DomainEffectManager.tickPosition(playerFeet, renderTickCounter.getDynamicDeltaTicks());
+
             PostEffectProcessor domainProcessor;
             try {
                 domainProcessor = client.getShaderLoader().loadPostEffect(

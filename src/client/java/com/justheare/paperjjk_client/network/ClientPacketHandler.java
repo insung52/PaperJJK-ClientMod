@@ -603,26 +603,32 @@ public class ClientPacketHandler {
         double locZ          = buf.readDouble();
         double power         = buf.readDouble();
         int    expansionDelay = buf.readInt();
+        int    maxPower       = buf.readInt();
 
         client.execute(() -> {
             net.minecraft.util.math.Vec3d feetPos = new net.minecraft.util.math.Vec3d(locX, locY, locZ);
-            com.justheare.paperjjk_client.shader.DomainEffectManager.onActivate(feetPos, power, expansionDelay);
-            LOGGER.info("[Simple Domain] ACTIVATE: pos=({},{},{}), power={}, expansionDelay={}",
+            com.justheare.paperjjk_client.shader.DomainEffectManager.onActivate(feetPos, power, expansionDelay, maxPower);
+            LOGGER.info("[Simple Domain] ACTIVATE: pos=({},{},{}), power={}, expansionDelay={}, maxPower={}",
                 String.format("%.2f", locX), String.format("%.2f", locY),
-                String.format("%.2f", locZ), String.format("%.1f", power), expansionDelay);
+                String.format("%.2f", locZ), String.format("%.1f", power), expansionDelay, maxPower);
         });
     }
 
     /**
      * SIMPLE_DOMAIN_CHARGING_END (0x22) - Charging stopped, power preserved
-     * Format: [power(8)]
+     * Format: [power(8)][locX(8)][locY(8)][locZ(8)]
      */
     private static void handleSimpleDomainChargingEnd(MinecraftClient client, PacketByteBuf buf) {
         double power = buf.readDouble();
+        double locX  = buf.readDouble();
+        double locY  = buf.readDouble();
+        double locZ  = buf.readDouble();
 
         client.execute(() -> {
-            com.justheare.paperjjk_client.shader.DomainEffectManager.onChargingEnd(power);
-            LOGGER.info("[Simple Domain] CHARGING_END: power={}", String.format("%.1f", power));
+            com.justheare.paperjjk_client.shader.DomainEffectManager.onChargingEnd(power, locX, locY, locZ);
+            LOGGER.info("[Simple Domain] CHARGING_END: power={}, loc=({},{},{})",
+                String.format("%.1f", power),
+                String.format("%.2f", locX), String.format("%.2f", locY), String.format("%.2f", locZ));
         });
     }
 
