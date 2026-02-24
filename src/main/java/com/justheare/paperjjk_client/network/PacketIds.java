@@ -35,6 +35,12 @@ public class PacketIds {
     public static final byte PLAYER_INFO_RESPONSE = 0x1A;   // Player info response
     public static final byte SKILL_INFO_RESPONSE = 0x1B;    // Skill description response
 
+    // Server → Client: Simple Domain (간이영역)
+    public static final byte SIMPLE_DOMAIN_ACTIVATE = 0x21;      // Domain activated (power starts from 0)
+    public static final byte SIMPLE_DOMAIN_CHARGING_END = 0x22;  // Charging stopped, power preserved
+    public static final byte SIMPLE_DOMAIN_POWER_SYNC = 0x23;    // Power corrected (e.g. after decreasePower)
+    public static final byte SIMPLE_DOMAIN_DEACTIVATE = 0x24;    // Domain deactivated (power reached 0)
+
     // Bidirectional
     public static final byte HANDSHAKE = 0x20;
 
@@ -141,6 +147,14 @@ public class PacketIds {
         public static final byte SYNC = 0x02;        // Sync position & strength (every 500ms)
         public static final byte END = 0x03;         // End Aka (remove effect)
     }
+
+    /**
+     * Simple Domain Packet format:
+     * SIMPLE_DOMAIN_ACTIVATE    (0x21): [locX(8)][locY(8)][locZ(8)][power(8)][expansionDelay(4)]  — caster feet pos + initial power + expansion delay constant
+     * SIMPLE_DOMAIN_CHARGING_END(0x22): [power(8)]                              — current power when charging stops
+     * SIMPLE_DOMAIN_POWER_SYNC  (0x23): [power(8)]                              — corrected power value
+     * SIMPLE_DOMAIN_DEACTIVATE  (0x24): (no payload)                            — power hit 0
+     */
 
     /**
      * Infinity Murasaki Action Type (action field in INFINITY_MURASAKI packet)

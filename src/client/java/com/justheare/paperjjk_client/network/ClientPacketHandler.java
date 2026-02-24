@@ -55,6 +55,10 @@ public class ClientPacketHandler {
                         case PacketIds.PLAYER_INFO_RESPONSE -> handlePlayerInfoResponse(context.client(), buf);
                         case PacketIds.SKILL_INFO_RESPONSE -> handleSkillInfoResponse(context.client(), buf);
                         case PacketIds.HANDSHAKE -> handleHandshake(context.client(), buf);
+                        case PacketIds.SIMPLE_DOMAIN_ACTIVATE -> handleSimpleDomainActivate(context.client(), buf);
+                        case PacketIds.SIMPLE_DOMAIN_CHARGING_END -> handleSimpleDomainChargingEnd(context.client(), buf);
+                        case PacketIds.SIMPLE_DOMAIN_POWER_SYNC -> handleSimpleDomainPowerSync(context.client(), buf);
+                        case PacketIds.SIMPLE_DOMAIN_DEACTIVATE -> handleSimpleDomainDeactivate(context.client(), buf);
                         default -> LOGGER.warn("Unknown packet ID: 0x{}", String.format("%02X", packetId));
                     }
                 } catch (Exception e) {
@@ -586,6 +590,63 @@ public class ClientPacketHandler {
                     detailScreen.refresh();
                 }
             }
+        });
+    }
+
+    /**
+     * SIMPLE_DOMAIN_ACTIVATE (0x21) - Domain activated (fresh start)
+     * Format: [locX(8)][locY(8)][locZ(8)][power(8)]
+     */
+    private static void handleSimpleDomainActivate(MinecraftClient client, PacketByteBuf buf) {
+        double locX          = buf.readDouble();
+        double locY          = buf.readDouble();
+        double locZ          = buf.readDouble();
+        double power         = buf.readDouble();
+        int    expansionDelay = buf.readInt();
+
+        client.execute(() -> {
+            net.minecraft.util.math.Vec3d feetPos = new net.minecraft.util.math.Vec3d(locX, locY, locZ);
+            com.justheare.paperjjk_client.shader.DomainEffectManager.onActivate(feetPos, power, expansionDelay);
+            LOGGER.info("[Simple Domain] ACTIVATE: pos=({},{},{}), power={}, expansionDelay={}",
+                String.format("%.2f", locX), String.format("%.2f", locY),
+                String.format("%.2f", locZ), String.format("%.1f", power), expansionDelay);
+        });
+    }
+
+    /**
+     * SIMPLE_DOMAIN_CHARGING_END (0x22) - Charging stopped, power preserved
+     * Format: [power(8)]
+     */
+    private static void handleSimpleDomainChargingEnd(MinecraftClient client, PacketByteBuf buf) {
+        double power = buf.readDouble();
+
+        client.execute(() -> {
+            com.justheare.paperjjk_client.shader.DomainEffectManager.onChargingEnd(power);
+            LOGGER.info("[Simple Domain] CHARGING_END: power={}", String.format("%.1f", power));
+        });
+    }
+
+    /**
+     * SIMPLE_DOMAIN_POWER_SYNC (0x23) - Authoritative power correction
+     * Format: [power(8)]
+     */
+    private static void handleSimpleDomainPowerSync(MinecraftClient client, PacketByteBuf buf) {
+        double power = buf.readDouble();
+
+        client.execute(() -> {
+            com.justheare.paperjjk_client.shader.DomainEffectManager.onPowerSync(power);
+            LOGGER.debug("[Simple Domain] POWER_SYNC: power={}", String.format("%.1f", power));
+        });
+    }
+
+    /**
+     * SIMPLE_DOMAIN_DEACTIVATE (0x24) - Domain deactivated (power reached 0)
+     * Format: (no payload)
+     */
+    private static void handleSimpleDomainDeactivate(MinecraftClient client, PacketByteBuf buf) {
+        client.execute(() -> {
+            com.justheare.paperjjk_client.shader.DomainEffectManager.onDeactivate();
+            LOGGER.info("[Simple Domain] DEACTIVATE");
         });
     }
 

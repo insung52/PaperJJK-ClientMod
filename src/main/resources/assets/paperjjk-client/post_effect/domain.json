@@ -20,12 +20,14 @@
             "output": "swap",
             "uniforms": {
                 "DomainConfig": [
-                    { "name": "InvViewProjC0", "type": "vec4", "value": [1.0, 0.0, 0.0, 0.0] },
-                    { "name": "InvViewProjC1", "type": "vec4", "value": [0.0, 1.0, 0.0, 0.0] },
-                    { "name": "InvViewProjC2", "type": "vec4", "value": [0.0, 0.0, 1.0, 0.0] },
-                    { "name": "InvViewProjC3", "type": "vec4", "value": [0.0, 0.0, 0.0, 1.0] },
-                    { "name": "CasterFeetPos", "type": "vec4", "value": [0.0, 0.0, 0.0, 0.0] },
-                    { "name": "ExpandRadius",  "type": "float", "value": 0.0 }
+                    { "name": "InvViewProjC0",  "type": "vec4",  "value": [1.0, 0.0, 0.0, 0.0] },
+                    { "name": "InvViewProjC1",  "type": "vec4",  "value": [0.0, 1.0, 0.0, 0.0] },
+                    { "name": "InvViewProjC2",  "type": "vec4",  "value": [0.0, 0.0, 1.0, 0.0] },
+                    { "name": "InvViewProjC3",  "type": "vec4",  "value": [0.0, 0.0, 0.0, 1.0] },
+                    { "name": "CasterFeetPos",  "type": "vec4",  "value": [0.0, 0.0, 0.0, 0.0] },
+                    { "name": "ExpandRadius",   "type": "float", "value": 0.0 },
+                    { "name": "DarkRadius",     "type": "float", "value": 0.0 },
+                    { "name": "DarknessLevel",  "type": "float", "value": 0.0 }
                 ]
             }
         },

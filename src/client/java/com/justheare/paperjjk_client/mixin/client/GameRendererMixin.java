@@ -145,7 +145,9 @@ public class GameRendererMixin {
                 float relZ   = (float)(feet.z - camPos.z);
 
                 updateDomainUniforms(domainProcessor, invViewProj, relX, relY, relZ,
-                    DomainEffectManager.getExpandRadius());
+                    DomainEffectManager.getExpandRadius(),
+                    DomainEffectManager.getDarkRadius(),
+                    DomainEffectManager.getDarknessLevel());
                 domainProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
             }
         }
@@ -227,13 +229,15 @@ public class GameRendererMixin {
      *   vec4 InvViewProjC0..C3  → 4 * 16 = 64 bytes
      *   vec4 CasterFeetPos      → 16 bytes  (.w = 0)
      *   float ExpandRadius      →  4 bytes
-     *   Total                   = 84 bytes
+     *   float DarkRadius        →  4 bytes
+     *   float DarknessLevel     →  4 bytes
+     *   Total                   = 92 bytes
      */
     @SuppressWarnings("unchecked")
     private void updateDomainUniforms(PostEffectProcessor processor,
                                        Matrix4f invViewProj,
                                        float casterX, float casterY, float casterZ,
-                                       float expandRadius) {
+                                       float expandRadius, float darkRadius, float darknessLevel) {
         try {
             java.lang.reflect.Field passesField = null;
             for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
@@ -257,10 +261,10 @@ public class GameRendererMixin {
             com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("DomainConfig");
             if (buf == null) return;
 
-            if ((buf.usage() & 8) == 0 || buf.size() < 84) {
+            if ((buf.usage() & 8) == 0 || buf.size() < 92) {
                 buf.close();
                 com.mojang.blaze3d.buffers.GpuBuffer newBuf =
-                    RenderSystem.getDevice().createBuffer(() -> "JJK DomainConfig", 8 | 128, 84);
+                    RenderSystem.getDevice().createBuffer(() -> "JJK DomainConfig", 8 | 128, 92);
                 ubs.put("DomainConfig", newBuf);
                 buf = newBuf;
             }
@@ -268,7 +272,7 @@ public class GameRendererMixin {
             org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush();
             try {
                 com.mojang.blaze3d.buffers.Std140Builder b =
-                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 84);
+                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 92);
                 // InvViewProj as 4 column vec4s (column-major, matches GLSL mat4)
                 b.putVec4(invViewProj.m00(), invViewProj.m01(), invViewProj.m02(), invViewProj.m03());
                 b.putVec4(invViewProj.m10(), invViewProj.m11(), invViewProj.m12(), invViewProj.m13());
@@ -276,8 +280,10 @@ public class GameRendererMixin {
                 b.putVec4(invViewProj.m30(), invViewProj.m31(), invViewProj.m32(), invViewProj.m33());
                 // CasterFeetPos as vec4 (.w = 0)
                 b.putVec4(casterX, casterY, casterZ, 0.0f);
-                // ExpandRadius
+                // ExpandRadius / DarkRadius / DarknessLevel
                 b.putFloat(expandRadius);
+                b.putFloat(darkRadius);
+                b.putFloat(darknessLevel);
                 RenderSystem.getDevice().createCommandEncoder()
                     .writeToBuffer(buf.slice(), b.get());
             } finally {
