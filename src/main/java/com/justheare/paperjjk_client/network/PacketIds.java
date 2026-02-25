@@ -40,6 +40,7 @@ public class PacketIds {
     public static final byte SIMPLE_DOMAIN_CHARGING_END = 0x22;  // Charging stopped, power preserved
     public static final byte SIMPLE_DOMAIN_POWER_SYNC = 0x23;    // Power corrected (e.g. after decreasePower)
     public static final byte SIMPLE_DOMAIN_DEACTIVATE = 0x24;    // Domain deactivated (power reached 0)
+    public static final byte SIMPLE_DOMAIN_TRANSLATE = 0x25;     // Domain location changed (translated)
 
     // Bidirectional
     public static final byte HANDSHAKE = 0x20;

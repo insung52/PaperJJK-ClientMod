@@ -61,6 +61,7 @@ public class ClientPacketHandler {
                         case PacketIds.SIMPLE_DOMAIN_CHARGING_END -> handleSimpleDomainChargingEnd(context.client(), buf);
                         case PacketIds.SIMPLE_DOMAIN_POWER_SYNC -> handleSimpleDomainPowerSync(context.client(), buf);
                         case PacketIds.SIMPLE_DOMAIN_DEACTIVATE -> handleSimpleDomainDeactivate(context.client(), buf);
+                        case PacketIds.SIMPLE_DOMAIN_TRANSLATE -> handleSimpleDomainTranslate(context.client(), buf);
                         default -> LOGGER.warn("Unknown packet ID: 0x{}", String.format("%02X", packetId));
                     }
                 } catch (Exception e) {
@@ -671,7 +672,7 @@ public class ClientPacketHandler {
             // Spawn crumble particles only when flagged (not for out-of-range penalty)
             if (spawnParticles) {
                 double delta = Math.max(oldPower - power,0.2);
-                delta = 2 * Math.PI * oldPower * delta;
+                delta = 2 * Math.PI * oldPower * delta * 0.2;
                 if (delta > 0 && state != null && client.world != null) {
                     spawnCrumbleParticles(client, state, delta);
                 }
@@ -697,6 +698,8 @@ public class ClientPacketHandler {
         // 1 particle per ~2 power lost, capped at 16
         int count = Math.max(1, Math.min(70, (int)(delta * 0.1)));
 
+        int baseCenterY = (int) Math.floor(center.y);
+
         for (int i = 0; i < count; i++) {
             // Random angle around the ring
             double angle = rng.nextDouble() * Math.PI * 2.0;
@@ -704,8 +707,11 @@ public class ClientPacketHandler {
             double r = radius + (rng.nextDouble() - 0.5) * 0.4;
 
             double px = center.x + r * Math.cos(angle);
-            double py = center.y + rng.nextDouble() * 0.5;
             double pz = center.z + r * Math.sin(angle);
+
+            // Find passable Y near caster floor level (search: 0, -1, -2, -3, +1, +2, +3)
+            double py = findPassableY(client.world, (int) Math.floor(px), baseCenterY, (int) Math.floor(pz))
+                        + rng.nextDouble() * 0.3;
 
             // Outward burst + upward drift
             double outward = 0.02 + rng.nextDouble() * 0.06;
@@ -722,6 +728,28 @@ public class ClientPacketHandler {
     }
 
     /**
+     * Finds the nearest passable (no-collision) Y position starting from baseY.
+     * Search order: 0, -1, -2, -3, +1, +2, +3
+     * Returns the Y of the first passable block found, or baseY as fallback.
+     */
+    private static double findPassableY(net.minecraft.client.world.ClientWorld world,
+                                        int bx, int baseY, int bz) {
+        int[] offsets = {0, -1, -2, -3, 1, 2, 3};
+        for (int offset : offsets) {
+            net.minecraft.util.math.BlockPos pos =
+                new net.minecraft.util.math.BlockPos(bx, baseY + offset, bz);
+            net.minecraft.util.math.BlockPos below =
+                new net.minecraft.util.math.BlockPos(bx, baseY + offset - 1, bz);
+            boolean passable = world.getBlockState(pos).getCollisionShape(world, pos).isEmpty();
+            boolean solidBelow = !world.getBlockState(below).getCollisionShape(world, below).isEmpty();
+            if (passable && solidBelow) {
+                return baseY + offset;
+            }
+        }
+        return baseY;
+    }
+
+    /**
      * SIMPLE_DOMAIN_DEACTIVATE (0x24) - Domain deactivated (power reached 0)
      * Format: [casterUUIDMost(8)][casterUUIDLeast(8)]
      */
@@ -733,6 +761,25 @@ public class ClientPacketHandler {
         client.execute(() -> {
             com.justheare.paperjjk_client.shader.DomainEffectManager.onDeactivate(casterUuid);
             LOGGER.info("[Simple Domain] DEACTIVATE: caster={}", casterUuid);
+        });
+    }
+
+    /**
+     * SIMPLE_DOMAIN_TRANSLATE (0x25) - Domain location changed (translated)
+     * Format: [locX(8)][locY(8)][locZ(8)][casterUUIDMost(8)][casterUUIDLeast(8)]
+     */
+    private static void handleSimpleDomainTranslate(MinecraftClient client, PacketByteBuf buf) {
+        double locX      = buf.readDouble();
+        double locY      = buf.readDouble();
+        double locZ      = buf.readDouble();
+        long   uuidMost  = buf.readLong();
+        long   uuidLeast = buf.readLong();
+        java.util.UUID casterUuid = new java.util.UUID(uuidMost, uuidLeast);
+
+        client.execute(() -> {
+            DomainEffectManager.onTranslate(casterUuid, locX, locY, locZ);
+            LOGGER.info("[Simple Domain] TRANSLATE: loc=({},{},{}), caster={}",
+                String.format("%.2f", locX), String.format("%.2f", locY), String.format("%.2f", locZ), casterUuid);
         });
     }
 

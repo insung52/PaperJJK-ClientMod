@@ -150,6 +150,13 @@ public class DomainEffectManager {
         state.lastSyncTimeMs = System.currentTimeMillis();
     }
 
+    /** SIMPLE_DOMAIN_TRANSLATE (0x25) — location moved (translated into another domain) */
+    public static void onTranslate(UUID casterUuid, double locX, double locY, double locZ) {
+        DomainState state = domains.get(casterUuid);
+        if (state == null) return;
+        state.casterFeetPos = new Vec3d(locX, locY, locZ);
+    }
+
     /** SIMPLE_DOMAIN_DEACTIVATE (0x24) */
     public static void onDeactivate(UUID casterUuid) {
         domains.remove(casterUuid);
