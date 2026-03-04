@@ -3,6 +3,7 @@ package com.justheare.paperjjk_client.mixin.client;
 import com.justheare.paperjjk_client.render.DebugRenderer;
 import com.justheare.paperjjk_client.render.JJKDepthCache;
 import com.justheare.paperjjk_client.shader.DomainEffectManager;
+import com.justheare.paperjjk_client.shader.KaiSlashEffectManager;
 import com.justheare.paperjjk_client.shader.RefractionEffectManager;
 import com.justheare.paperjjk_client.util.WorldToScreenUtil;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -36,6 +37,9 @@ public class GameRendererMixin {
     private static final Identifier DOMAIN_EFFECT_ID =
         Identifier.of("paperjjk-client", "domain");
 
+    private static final Identifier KAI_SLASH_EFFECT_ID =
+        Identifier.of("paperjjk-client", "kai_slash");
+
     /**
      * Apply refraction post-processing BEFORE the HUD renders.
      * This ensures the crosshair, health bar, hotbar etc. are NOT distorted.
@@ -60,7 +64,8 @@ public class GameRendererMixin {
 
         // Nothing to do if no effects of any kind are active
         List<RefractionEffectManager.RefractionEffect> effects = RefractionEffectManager.getEffects();
-        if (effects.isEmpty() && !DomainEffectManager.hasActiveDomains()) return;
+        if (effects.isEmpty() && !DomainEffectManager.hasActiveDomains()
+                && !KaiSlashEffectManager.isDebugActive()) return;
 
         Camera camera = client.gameRenderer.getCamera();
         // Use the actual dynamic FOV (includes sprint/fly/speed effect/bow draw modifiers)
@@ -115,6 +120,29 @@ public class GameRendererMixin {
                 processor.render(mainFb, ObjectAllocator.TRIVIAL);
             }
         } // end refraction block
+
+        // ── Kai slash (해) — single debug pass ────────────────────────────────
+        if (KaiSlashEffectManager.isDebugActive()) {
+            PostEffectProcessor kaiProcessor;
+            try {
+                kaiProcessor = client.getShaderLoader().loadPostEffect(
+                    KAI_SLASH_EFFECT_ID,
+                    Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN)
+                );
+            } catch (Exception e) {
+                System.err.println("[JJKMixin] Failed to load kai_slash post effect: " + e.getMessage());
+                kaiProcessor = null;
+            }
+            if (kaiProcessor != null) {
+                updateKaiSlashUniforms(kaiProcessor,
+                    KaiSlashEffectManager.getP1x(), KaiSlashEffectManager.getP1y(),
+                    KaiSlashEffectManager.getP2x(), KaiSlashEffectManager.getP2y(),
+                    KaiSlashEffectManager.getCoreHalfWidth(),
+                    KaiSlashEffectManager.getBloomWidth(),
+                    KaiSlashEffectManager.getAlpha());
+                kaiProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
+            }
+        }
 
         // ── Domain effect (간이영역) — one render pass per active domain ────────
         if (DomainEffectManager.hasActiveDomains()) {
@@ -235,6 +263,74 @@ public class GameRendererMixin {
             }
         } catch (Exception e) {
             System.err.println("[JJKMixin] updateRefractionUniforms failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Updates the KaiSlashConfig uniform buffer.
+     *
+     * std140 layout:
+     *   vec2 SlashP1        →  8 bytes
+     *   vec2 SlashP2        →  8 bytes
+     *   float CoreHalfWidth →  4 bytes
+     *   float BloomWidth    →  4 bytes
+     *   float Alpha         →  4 bytes
+     *   float _pad          →  4 bytes
+     *   Total               = 32 bytes
+     */
+    @SuppressWarnings("unchecked")
+    private void updateKaiSlashUniforms(PostEffectProcessor processor,
+                                         float p1x, float p1y,
+                                         float p2x, float p2y,
+                                         float coreHalfWidth, float bloomWidth, float alpha) {
+        try {
+            java.lang.reflect.Field passesField = null;
+            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
+                if (java.util.List.class.isAssignableFrom(f.getType())) { passesField = f; break; }
+            }
+            if (passesField == null) return;
+            passesField.setAccessible(true);
+            List<?> passes = (List<?>) passesField.get(processor);
+            if (passes.isEmpty()) return;
+            Object firstPass = passes.get(0);
+
+            java.lang.reflect.Field ubField = null;
+            for (java.lang.reflect.Field f : firstPass.getClass().getDeclaredFields()) {
+                if (java.util.Map.class.isAssignableFrom(f.getType())) { ubField = f; break; }
+            }
+            if (ubField == null) return;
+            ubField.setAccessible(true);
+            java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> ubs =
+                (java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>) ubField.get(firstPass);
+
+            com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("KaiSlashConfig");
+            if (buf == null) return;
+
+            if ((buf.usage() & 8) == 0 || buf.size() < 32) {
+                buf.close();
+                com.mojang.blaze3d.buffers.GpuBuffer newBuf =
+                    RenderSystem.getDevice().createBuffer(() -> "JJK KaiSlashConfig", 8 | 128, 32);
+                ubs.put("KaiSlashConfig", newBuf);
+                buf = newBuf;
+            }
+
+            org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush();
+            try {
+                com.mojang.blaze3d.buffers.Std140Builder b =
+                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 32);
+                b.putVec2(p1x, p1y);
+                b.putVec2(p2x, p2y);
+                b.putFloat(coreHalfWidth);
+                b.putFloat(bloomWidth);
+                b.putFloat(alpha);
+                b.putFloat(0.0f); // _pad
+                RenderSystem.getDevice().createCommandEncoder()
+                    .writeToBuffer(buf.slice(), b.get());
+            } finally {
+                stack.pop();
+            }
+        } catch (Exception e) {
+            System.err.println("[JJKMixin] updateKaiSlashUniforms failed: " + e.getMessage());
         }
     }
 

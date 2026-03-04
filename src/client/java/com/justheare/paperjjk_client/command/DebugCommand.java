@@ -48,6 +48,9 @@ public class DebugCommand {
                 .then(literal("particle")
                     .executes(DebugCommand::toggleParticleTest)
                 )
+                .then(literal("kai")
+                    .executes(DebugCommand::toggleKaiSlash)
+                )
         );
     }
 
@@ -213,6 +216,15 @@ public class DebugCommand {
         particleTestActive = !particleTestActive;
         context.getSource().sendFeedback(
             Text.literal("§d[PaperJJK] §f파티클 테스트 §" + (particleTestActive ? "aON" : "cOFF"))
+        );
+        return 1;
+    }
+
+    private static int toggleKaiSlash(CommandContext<FabricClientCommandSource> context) {
+        com.justheare.paperjjk_client.shader.KaiSlashEffectManager.toggleDebug();
+        boolean active = com.justheare.paperjjk_client.shader.KaiSlashEffectManager.isDebugActive();
+        context.getSource().sendFeedback(
+            Text.literal("§d[PaperJJK] §f참격(해) 효과 §" + (active ? "aON" : "cOFF"))
         );
         return 1;
     }
