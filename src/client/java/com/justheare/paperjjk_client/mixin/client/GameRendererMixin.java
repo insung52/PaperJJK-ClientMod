@@ -65,7 +65,7 @@ public class GameRendererMixin {
         // Nothing to do if no effects of any kind are active
         List<RefractionEffectManager.RefractionEffect> effects = RefractionEffectManager.getEffects();
         if (effects.isEmpty() && !DomainEffectManager.hasActiveDomains()
-                && !KaiSlashEffectManager.isDebugActive()) return;
+                && !KaiSlashEffectManager.isAnyActive()) return;
 
         Camera camera = client.gameRenderer.getCamera();
         // Use the actual dynamic FOV (includes sprint/fly/speed effect/bow draw modifiers)
@@ -121,8 +121,9 @@ public class GameRendererMixin {
             }
         } // end refraction block
 
-        // ── Kai slash (해) — single debug pass ────────────────────────────────
-        if (KaiSlashEffectManager.isDebugActive()) {
+        // ── Kai slash (해) — debug + server instances ────────────────────────
+        List<KaiSlashEffectManager.KaiSlashEffect> kaiEffects = KaiSlashEffectManager.getActiveEffects();
+        if (KaiSlashEffectManager.isDebugActive() || !kaiEffects.isEmpty()) {
             PostEffectProcessor kaiProcessor;
             try {
                 kaiProcessor = client.getShaderLoader().loadPostEffect(
@@ -134,13 +135,51 @@ public class GameRendererMixin {
                 kaiProcessor = null;
             }
             if (kaiProcessor != null) {
-                updateKaiSlashUniforms(kaiProcessor,
-                    KaiSlashEffectManager.getP1x(), KaiSlashEffectManager.getP1y(),
-                    KaiSlashEffectManager.getP2x(), KaiSlashEffectManager.getP2y(),
-                    KaiSlashEffectManager.getCoreHalfWidth(),
-                    KaiSlashEffectManager.getBloomWidth(),
-                    KaiSlashEffectManager.getAlpha());
-                kaiProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
+                // 디버그 단일 슬래시 (루프 반복)
+                if (KaiSlashEffectManager.isDebugActive()) {
+                    updateKaiSlashUniforms(kaiProcessor,
+                        KaiSlashEffectManager.getP1x(), KaiSlashEffectManager.getP1y(),
+                        KaiSlashEffectManager.getP2x(), KaiSlashEffectManager.getP2y(),
+                        KaiSlashEffectManager.getCoreHalfWidth(),
+                        KaiSlashEffectManager.getBloomWidth(),
+                        KaiSlashEffectManager.getAlpha(),
+                        KaiSlashEffectManager.getDebugTime());
+                    kaiProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
+                }
+
+                // 서버 전송 인스턴스 — 월드 좌표를 화면 UV 로 투영
+                final float SLASH_HALF_LEN = 1.8f;
+                for (KaiSlashEffectManager.KaiSlashEffect e : kaiEffects) {
+                    Vec3d p1World = new Vec3d(
+                        e.worldX + e.axisX * SLASH_HALF_LEN,
+                        e.worldY + e.axisY * SLASH_HALF_LEN,
+                        e.worldZ + e.axisZ * SLASH_HALF_LEN);
+                    Vec3d p2World = new Vec3d(
+                        e.worldX - e.axisX * SLASH_HALF_LEN,
+                        e.worldY - e.axisY * SLASH_HALF_LEN,
+                        e.worldZ - e.axisZ * SLASH_HALF_LEN);
+
+                    Vec3d sp1 = WorldToScreenUtil.worldToScreen(p1World, camera, projectionMatrix);
+                    Vec3d sp2 = WorldToScreenUtil.worldToScreen(p2World, camera, projectionMatrix);
+                    if (sp1 == null || sp2 == null) continue;
+
+                    // WorldToScreenUtil: y=0 위쪽. 셰이더 texCoord: y=0 아래쪽 → Y 반전
+                    float kp1x = (float) sp1.x;
+                    float kp1y = 1.0f - (float) sp1.y;
+                    float kp2x = (float) sp2.x;
+                    float kp2y = 1.0f - (float) sp2.y;
+
+                    // 중심까지의 거리로 두께 스케일 (기준 거리 3블록)
+                    float dist = (float)((sp1.z + sp2.z) * 0.5);
+                    float distScale = 3.0f / Math.max(3.0f, dist);
+
+                    updateKaiSlashUniforms(kaiProcessor,
+                        kp1x, kp1y, kp2x, kp2y,
+                        KaiSlashEffectManager.getCoreHalfWidth() * distScale,
+                        KaiSlashEffectManager.getBloomWidth() * distScale,
+                        1.0f, e.getTime());
+                    kaiProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
+                }
             }
         }
 
@@ -282,7 +321,8 @@ public class GameRendererMixin {
     private void updateKaiSlashUniforms(PostEffectProcessor processor,
                                          float p1x, float p1y,
                                          float p2x, float p2y,
-                                         float coreHalfWidth, float bloomWidth, float alpha) {
+                                         float coreHalfWidth, float bloomWidth,
+                                         float alpha, float time) {
         try {
             java.lang.reflect.Field passesField = null;
             for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
@@ -323,7 +363,7 @@ public class GameRendererMixin {
                 b.putFloat(coreHalfWidth);
                 b.putFloat(bloomWidth);
                 b.putFloat(alpha);
-                b.putFloat(0.0f); // _pad
+                b.putFloat(time);
                 RenderSystem.getDevice().createCommandEncoder()
                     .writeToBuffer(buf.slice(), b.get());
             } finally {

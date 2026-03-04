@@ -64,6 +64,7 @@ public class ClientPacketHandler {
                         case PacketIds.SIMPLE_DOMAIN_TRANSLATE -> handleSimpleDomainTranslate(context.client(), buf);
                         case PacketIds.SLOT_GAUGE_UPDATE -> handleSlotGaugeUpdate(context.client(), buf);
                         case PacketIds.BODY_REIN_UPDATE  -> handleBodyReinUpdate(context.client(), buf);
+                        case PacketIds.KAI_SLASH         -> handleKaiSlash(context.client(), buf);
                         default -> LOGGER.warn("Unknown packet ID: 0x{}", String.format("%02X", packetId));
                     }
                 } catch (Exception e) {
@@ -820,6 +821,26 @@ public class ClientPacketHandler {
     private static void handleBodyReinUpdate(MinecraftClient client, PacketByteBuf buf) {
         float ratio = (buf.readUnsignedByte()) / 100f;
         client.execute(() -> ClientGameData.setBodyReinforcement(ratio));
+    }
+
+    /**
+     * KAI_SLASH (0x32) — 참격(해) 화면 post-processing 효과
+     * Format: [hitX(4)][hitY(4)][hitZ(4)][axisX(4)][axisY(4)][axisZ(4)]
+     */
+    private static void handleKaiSlash(MinecraftClient client, PacketByteBuf buf) {
+        float hitX  = buf.readFloat();
+        float hitY  = buf.readFloat();
+        float hitZ  = buf.readFloat();
+        float axisX = buf.readFloat();
+        float axisY = buf.readFloat();
+        float axisZ = buf.readFloat();
+
+        client.execute(() -> {
+            com.justheare.paperjjk_client.shader.KaiSlashEffectManager.addEffect(
+                hitX, hitY, hitZ, axisX, axisY, axisZ);
+            LOGGER.debug("[Kai Slash] effect at ({},{},{}), axis=({},{},{})",
+                hitX, hitY, hitZ, axisX, axisY, axisZ);
+        });
     }
 
     /**
