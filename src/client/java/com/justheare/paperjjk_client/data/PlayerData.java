@@ -14,6 +14,8 @@ public class PlayerData {
     private static int maxCurseEnergy = 0;
     private static boolean hasRCT = false;
     private static int domainLevel = 0;
+    private static int efficiencyLevel = 0;
+    private static boolean canGraspAirSurface = false;
     private static String slot1Skill = "";
     private static String slot2Skill = "";
     private static String slot3Skill = "";
@@ -28,17 +30,21 @@ public class PlayerData {
     // Client settings (stored client-side)
     private static boolean postProcessingEnabled = true;
     private static boolean domainEffectsEnabled = true;
+    private static boolean hudEnabled = true;
 
     /**
      * Update player info from server response
      */
     public static void updatePlayerInfo(String naturaltech, int ce, int maxCE, boolean rct, int domainLvl,
-                                       String slot1, String slot2, String slot3, String slot4) {
+                                       String slot1, String slot2, String slot3, String slot4,
+                                       int efficiencyLvl, boolean airGrasp) {
         PlayerData.naturaltech = naturaltech;
         PlayerData.curseEnergy = ce;
         PlayerData.maxCurseEnergy = maxCE;
         PlayerData.hasRCT = rct;
         PlayerData.domainLevel = domainLvl;
+        PlayerData.efficiencyLevel = efficiencyLvl;
+        PlayerData.canGraspAirSurface = airGrasp;
         PlayerData.slot1Skill = slot1;
         PlayerData.slot2Skill = slot2;
         PlayerData.slot3Skill = slot3;
@@ -58,6 +64,8 @@ public class PlayerData {
     public static int getMaxCurseEnergy() { return maxCurseEnergy; }
     public static boolean hasRCT() { return hasRCT; }
     public static int getDomainLevel() { return domainLevel; }
+    public static int getEfficiencyLevel() { return efficiencyLevel; }
+    public static boolean canGraspAirSurface() { return canGraspAirSurface; }
     public static String getSlot1Skill() { return slot1Skill; }
     public static String getSlot2Skill() { return slot2Skill; }
     public static String getSlot3Skill() { return slot3Skill; }
@@ -82,6 +90,9 @@ public class PlayerData {
 
     public static boolean isDomainEffectsEnabled() { return domainEffectsEnabled; }
     public static void setDomainEffectsEnabled(boolean enabled) { domainEffectsEnabled = enabled; }
+
+    public static boolean isHudEnabled() { return hudEnabled; }
+    public static void setHudEnabled(boolean enabled) { hudEnabled = enabled; }
 
     /**
      * Skill information data class

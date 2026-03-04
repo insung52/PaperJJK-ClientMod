@@ -4,7 +4,9 @@ import net.minecraft.util.math.Vec3d;
 
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -25,6 +27,24 @@ public class ClientGameData {
 
     // 영역전개 렌더링 정보 (도메인 ID → 도메인 데이터)
     private static final Map<UUID, ActiveDomain> activeDomains = new HashMap<>();
+
+    // 신체강화 (0.0~1.0 비율, 서버 패킷 추가 전까지 기본 0)
+    private static float bodyReinforcementRatio = 0f;
+
+    // 스킬 슬롯 충전 게이지 (슬롯 번호 1~4 → 0.0~1.0 비율)
+    private static final Map<Byte, Float> slotGauges = new HashMap<>();
+
+    // 스킬 슬롯 상태 (슬롯 번호 1~4 → SlotGaugeState 바이트)
+    private static final Map<Byte, Byte> slotStates = new HashMap<>();
+
+    // 슬롯 자물쇠 (T키 고정 등)
+    private static final Map<Byte, Boolean> slotLocked = new HashMap<>();
+
+    // 슬롯 레이블 (거리: "3m", 방향: "↑"/"↓" 등)
+    private static final Map<Byte, String> slotLabels = new HashMap<>();
+
+    // 비활성화된 스킬 슬롯 (술식 타버림 등 디버프)
+    private static final Set<Byte> disabledSlots = new HashSet<>();
 
     /**
      * 주술력 설정
@@ -99,6 +119,33 @@ public class ClientGameData {
         return cooldowns.getOrDefault(slot, new CooldownData(0, 0));
     }
 
+    // 신체강화 setter/getter
+    public static void setBodyReinforcement(float ratio) { bodyReinforcementRatio = ratio; }
+    public static float getBodyReinforcementRatio() { return bodyReinforcementRatio; }
+
+    // 슬롯 충전 게이지 setter/getter (slot: 1~4)
+    public static void setSlotGauge(byte slot, float ratio) { slotGauges.put(slot, ratio); }
+    public static float getSlotGauge(byte slot) { return slotGauges.getOrDefault(slot, 0f); }
+
+    // 슬롯 상태 setter/getter (state: SlotGaugeState 바이트)
+    public static void setSlotState(byte slot, byte state) { slotStates.put(slot, state); }
+    public static byte getSlotState(byte slot) { return slotStates.getOrDefault(slot, (byte)0x00); }
+
+    // 슬롯 자물쇠 setter/getter
+    public static void setSlotLocked(byte slot, boolean locked) { slotLocked.put(slot, locked); }
+    public static boolean isSlotLocked(byte slot) { return slotLocked.getOrDefault(slot, false); }
+
+    // 슬롯 레이블 setter/getter
+    public static void setSlotLabel(byte slot, String label) { slotLabels.put(slot, label != null ? label : ""); }
+    public static String getSlotLabel(byte slot) { return slotLabels.getOrDefault(slot, ""); }
+
+    // 슬롯 비활성화 setter/getter
+    public static void setSlotDisabled(byte slot, boolean disabled) {
+        if (disabled) disabledSlots.add(slot);
+        else disabledSlots.remove(slot);
+    }
+    public static boolean isSlotDisabled(byte slot) { return disabledSlots.contains(slot); }
+
     /**
      * 모든 데이터 초기화 (서버 나갈 때 호출)
      */
@@ -110,6 +157,12 @@ public class ClientGameData {
         blocked = false;
         cooldowns.clear();
         activeDomains.clear();
+        bodyReinforcementRatio = 0f;
+        slotGauges.clear();
+        slotStates.clear();
+        slotLocked.clear();
+        slotLabels.clear();
+        disabledSlots.clear();
     }
 
     // === Domain Management ===

@@ -51,49 +51,49 @@ public class PlayerInfoScreen extends Screen {
         this.slot1Button = ButtonWidget.builder(
             Text.literal("X: " + getShortSkillName(PlayerData.getSlot1Skill())),
             button -> openSkillDetail(PlayerData.getSlot1Skill())
-        ).dimensions(centerX - buttonWidth - gap/2, startY + 100, buttonWidth, buttonHeight).build();
+        ).dimensions(centerX - buttonWidth - gap/2, startY + 124, buttonWidth, buttonHeight).build();
         this.addDrawableChild(slot1Button);
 
         // Slot 2 (C) - Top right
         this.slot2Button = ButtonWidget.builder(
             Text.literal("C: " + getShortSkillName(PlayerData.getSlot2Skill())),
             button -> openSkillDetail(PlayerData.getSlot2Skill())
-        ).dimensions(centerX + gap/2, startY + 100, buttonWidth, buttonHeight).build();
+        ).dimensions(centerX + gap/2, startY + 124, buttonWidth, buttonHeight).build();
         this.addDrawableChild(slot2Button);
 
         // Slot 3 (V) - Bottom left
         this.slot3Button = ButtonWidget.builder(
             Text.literal("V: " + getShortSkillName(PlayerData.getSlot3Skill())),
             button -> openSkillDetail(PlayerData.getSlot3Skill())
-        ).dimensions(centerX - buttonWidth - gap/2, startY + 100 + buttonHeight + 5, buttonWidth, buttonHeight).build();
+        ).dimensions(centerX - buttonWidth - gap/2, startY + 124 + buttonHeight + 5, buttonWidth, buttonHeight).build();
         this.addDrawableChild(slot3Button);
 
         // Slot 4 (B) - Bottom right
         this.slot4Button = ButtonWidget.builder(
             Text.literal("B: " + getShortSkillName(PlayerData.getSlot4Skill())),
             button -> openSkillDetail(PlayerData.getSlot4Skill())
-        ).dimensions(centerX + gap/2, startY + 100 + buttonHeight + 5, buttonWidth, buttonHeight).build();
+        ).dimensions(centerX + gap/2, startY + 124 + buttonHeight + 5, buttonWidth, buttonHeight).build();
         this.addDrawableChild(slot4Button);
 
         // Edit skills button
         this.editSkillsButton = ButtonWidget.builder(
             Text.literal("스킬 편집"),
             button -> openSkillEditor()
-        ).dimensions(centerX - 102, startY + 180, 100, 20).build();
+        ).dimensions(centerX - 102, startY + 204, 100, 20).build();
         this.addDrawableChild(editSkillsButton);
 
         // Settings button
         this.settingsButton = ButtonWidget.builder(
             Text.literal("옵션 설정"),
             button -> openSettings()
-        ).dimensions(centerX + 2, startY + 180, 100, 20).build();
+        ).dimensions(centerX + 2, startY + 204, 100, 20).build();
         this.addDrawableChild(settingsButton);
 
         // Close button
         this.closeButton = ButtonWidget.builder(
             Text.literal("닫기"),
             button -> this.close()
-        ).dimensions(centerX - 50, startY + 210, 100, 20).build();
+        ).dimensions(centerX - 50, startY + 234, 100, 20).build();
         this.addDrawableChild(closeButton);
 
         LOGGER.info("[Player Info] Screen initialized");
@@ -167,13 +167,36 @@ public class PlayerInfoScreen extends Screen {
             true
         );
 
+        // CE efficiency level
+        int eff = PlayerData.getEfficiencyLevel();
+        String effText = String.format("주력 효율: §e%d§f (소모 §a%.0f%%§f)", eff, 100.0 - eff * 0.99);
+        context.drawText(
+            this.textRenderer,
+            Text.literal(effText),
+            centerX - this.textRenderer.getWidth(effText) / 2,
+            startY + 82,
+            0xFFFFFFFF,
+            true
+        );
+
+        // Air surface grasp
+        String airText = "공기의 면 포착: " + (PlayerData.canGraspAirSurface() ? "§a가능" : "§c불가");
+        context.drawText(
+            this.textRenderer,
+            Text.literal(airText),
+            centerX - this.textRenderer.getWidth(airText) / 2,
+            startY + 94,
+            0xFFFFFFFF,
+            true
+        );
+
         // Skill slots label
         String slotsLabel = "§6스킬 단축키";
         context.drawText(
             this.textRenderer,
             Text.literal(slotsLabel),
             centerX - this.textRenderer.getWidth(slotsLabel) / 2,
-            startY + 85,
+            startY + 109,
             0xFFFFFFFF,
             true
         );

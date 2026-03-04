@@ -25,7 +25,12 @@ public class CEUpdatePacket {
         int currentCE = buf.readInt();
         int maxCE = buf.readInt();
         float regenRate = buf.readFloat();
-        String technique = buf.readString();
+        // 서버가 ByteArrayDataOutput.writeUTF() (Java DataOutput: 2바이트 길이 + UTF-8) 로 전송.
+        // buf.readString()은 Minecraft varint 방식이라 포맷 불일치 → 수동 파싱.
+        int len = buf.readUnsignedShort();
+        byte[] bytes = new byte[len];
+        buf.readBytes(bytes);
+        String technique = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
         boolean blocked = buf.readBoolean();
         return new CEUpdatePacket(currentCE, maxCE, regenRate, technique, blocked);
     }

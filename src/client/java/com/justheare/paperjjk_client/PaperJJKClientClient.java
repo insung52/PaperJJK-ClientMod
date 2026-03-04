@@ -9,6 +9,7 @@ import com.justheare.paperjjk_client.network.ClientPacketHandler;
 import com.justheare.paperjjk_client.particle.DomainParticle;
 import com.justheare.paperjjk_client.particle.ModParticles;
 import com.justheare.paperjjk_client.render.DebugRenderer;
+import com.justheare.paperjjk_client.render.JJKHudRenderer;
 // import com.justheare.paperjjk_client.render.DomainRenderer;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -116,6 +117,10 @@ public class PaperJJKClientClient implements ClientModInitializer {
 
 
 		// Post-processing은 이제 GameRendererMixin에서 처리됩니다 (Iris처럼 renderLevel의 TAIL에 injection)
+
+		// HUD 렌더러 등록
+		HudRenderCallback.EVENT.register((drawContext, tickCounter) ->
+				JJKHudRenderer.render(drawContext));
 
 		// 클라이언트 틱 이벤트: 도메인 반지름 업데이트 + 파티클 테스트
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {

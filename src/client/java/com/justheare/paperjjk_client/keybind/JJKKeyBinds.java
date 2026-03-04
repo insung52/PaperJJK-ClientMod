@@ -38,6 +38,11 @@ public class JJKKeyBinds {
     // Key state tracking
     private static boolean rctPressed = false;
     private static boolean barrierPressed = false;
+    /** Z 키를 눌렀을 때 시작된 행동: 0=없음, 1=RCT, 2=bodyRein NORMAL, 3=bodyRein BITEN */
+    private static byte zActionStarted = 0;
+
+    // Space 키 이전 프레임 상태 (대쉬 감지용)
+    private static boolean spaceWasPressed = false;
     private static boolean slot1Pressed = false;
     private static boolean slot2Pressed = false;
     private static boolean slot3Pressed = false;
@@ -205,38 +210,112 @@ public class JJKKeyBinds {
         processBarrierKey(client);
         processTechniqueSlots(client);
         processDomainExpansionKey(client);
+        processDash(client, windowHandle);
     }
 
     /**
-     * Process RCT key (Z)
-     * input.md: Z + Shift for healing (hold)
+     * Process RCT / 신체강화 key (Z)
+     * - Shift + Z : 반전술식 (RCT healing)
+     * - G + Z     : 비전, 낙화의 정 (BITEN body rein)
+     * - Z alone   : 신체강화 NORMAL
      */
     private static void processRCTKey(MinecraftClient client) {
         boolean isPressed = rctKey.isPressed();
 
         if (isPressed && !rctPressed) {
             // Z key pressed
-            LOGGER.info("[KEY DEBUG] Z pressed (Shift: {})", shiftPressed);
             if (shiftPressed) {
-                // Z + Shift: RCT healing
+                // Shift+Z → 반전술식
                 sendSkillPacket(PacketIds.SKILL_RCT, PacketIds.SkillAction.START, (byte) 0);
-                LOGGER.info("[RCT] Healing started (Z + Shift)");
+                zActionStarted = 1;
+                LOGGER.info("[RCT] Healing started (Shift+Z)");
+            } else if (barrierPressed) {
+                // G+Z → 비전, 낙화의 정 (BITEN)
+                sendBodyReinPacket(PacketIds.SkillAction.START, PacketIds.BodyReinMode.BITEN);
+                zActionStarted = 3;
+                LOGGER.info("[BodyRein] BITEN started (G+Z)");
             } else {
-                LOGGER.info("[KEY DEBUG] Z pressed without Shift - no action");
+                // Z alone → 신체강화 NORMAL
+                sendBodyReinPacket(PacketIds.SkillAction.START, PacketIds.BodyReinMode.NORMAL);
+                zActionStarted = 2;
+                LOGGER.info("[BodyRein] NORMAL started (Z)");
             }
             rctPressed = true;
         } else if (!isPressed && rctPressed) {
-            // Z key released
-            LOGGER.info("[KEY DEBUG] Z released (Shift: {})", shiftPressed);
-            if (shiftPressed) {
-                // RCT healing end
-                sendSkillPacket(PacketIds.SKILL_RCT, PacketIds.SkillAction.END, (byte) 0);
-                LOGGER.info("[RCT] Healing ended");
-            } else {
-                LOGGER.info("[KEY DEBUG] Z released without Shift - no action");
+            // Z key released — 시작 시 기록된 행동으로 종료
+            switch (zActionStarted) {
+                case 1 -> {
+                    sendSkillPacket(PacketIds.SKILL_RCT, PacketIds.SkillAction.END, (byte) 0);
+                    LOGGER.info("[RCT] Healing ended");
+                }
+                case 2 -> {
+                    sendBodyReinPacket(PacketIds.SkillAction.END, PacketIds.BodyReinMode.NORMAL);
+                    LOGGER.info("[BodyRein] NORMAL ended");
+                }
+                case 3 -> {
+                    sendBodyReinPacket(PacketIds.SkillAction.END, PacketIds.BodyReinMode.BITEN);
+                    LOGGER.info("[BodyRein] BITEN ended");
+                }
             }
+            zActionStarted = 0;
             rctPressed = false;
         }
+    }
+
+    /**
+     * Space 대쉬.
+     * 신체강화 주력이 존재하면 Space 단독으로 대쉬 패킷 전송.
+     */
+    private static void processDash(MinecraftClient client, long windowHandle) {
+        boolean currentSpacePressed = GLFW.glfwGetKey(windowHandle, GLFW.GLFW_KEY_SPACE) == GLFW.GLFW_PRESS;
+        boolean spaceJustPressed = currentSpacePressed && !spaceWasPressed;
+
+        if (spaceJustPressed && com.justheare.paperjjk_client.data.ClientGameData.getBodyReinforcementRatio() > 0f) {
+            boolean onGround = client.player != null && client.player.isOnGround();
+            sendDashPacket(onGround);
+            LOGGER.info("[Dash] Dash triggered (Space, bodyRein > 0, onGround={})", onGround);
+        }
+
+        spaceWasPressed = currentSpacePressed;
+    }
+
+    /**
+     * Send dash packet to server.
+     * Format: [DASH(1)] [onGround(1)]
+     */
+    private static void sendDashPacket(boolean onGround) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.getNetworkHandler() == null) return;
+
+        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        buf.writeByte(PacketIds.DASH);
+        buf.writeBoolean(onGround);
+
+        byte[] data = new byte[buf.readableBytes()];
+        buf.getBytes(0, data);
+
+        JJKPayload payload = new JJKPayload(data);
+        client.getNetworkHandler().sendPacket(new CustomPayloadC2SPacket(payload));
+    }
+
+    /**
+     * Send body reinforcement key packet to server.
+     * Format: [BODY_REIN_KEY(1)] [action(1)] [mode(1)]
+     */
+    private static void sendBodyReinPacket(byte action, byte mode) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.getNetworkHandler() == null) return;
+
+        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        buf.writeByte(PacketIds.BODY_REIN_KEY);
+        buf.writeByte(action);
+        buf.writeByte(mode);
+
+        byte[] data = new byte[buf.readableBytes()];
+        buf.getBytes(0, data);
+
+        JJKPayload payload = new JJKPayload(data);
+        client.getNetworkHandler().sendPacket(new CustomPayloadC2SPacket(payload));
     }
 
     /**
@@ -601,6 +680,8 @@ public class JJKKeyBinds {
      */
     public static void reset() {
         rctPressed = false;
+        zActionStarted = 0;
+        spaceWasPressed = false;
         barrierPressed = false;
         slot1Pressed = false;
         slot2Pressed = false;

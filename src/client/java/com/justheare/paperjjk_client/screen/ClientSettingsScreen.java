@@ -27,10 +27,12 @@ public class ClientSettingsScreen extends Screen {
     // Setting values
     private boolean postProcessingEnabled;
     private boolean domainEffectsEnabled;
+    private boolean hudEnabled;
 
     // Setting buttons
     private ButtonWidget postProcessingButton;
     private ButtonWidget domainEffectsButton;
+    private ButtonWidget hudButton;
 
     private ButtonWidget saveButton;
     private ButtonWidget cancelButton;
@@ -42,6 +44,7 @@ public class ClientSettingsScreen extends Screen {
         // Initialize with current settings
         this.postProcessingEnabled = PlayerData.isPostProcessingEnabled();
         this.domainEffectsEnabled = PlayerData.isDomainEffectsEnabled();
+        this.hudEnabled = PlayerData.isHudEnabled();
     }
 
     @Override
@@ -75,18 +78,29 @@ public class ClientSettingsScreen extends Screen {
         ).dimensions(centerX - buttonWidth / 2, startY + 60, buttonWidth, buttonHeight).build();
         this.addDrawableChild(domainEffectsButton);
 
+        // HUD toggle
+        this.hudButton = ButtonWidget.builder(
+            Text.literal(hudEnabled ? "HUD: §a켜짐" : "HUD: §c꺼짐"),
+            button -> {
+                hudEnabled = !hudEnabled;
+                button.setMessage(Text.literal(hudEnabled ? "HUD: §a켜짐" : "HUD: §c꺼짐"));
+                LOGGER.info("[Client Settings] HUD toggled to: {}", hudEnabled);
+            }
+        ).dimensions(centerX - buttonWidth / 2, startY + 100, buttonWidth, buttonHeight).build();
+        this.addDrawableChild(hudButton);
+
         // Save button
         this.saveButton = ButtonWidget.builder(
             Text.literal("저장"),
             button -> saveSettings()
-        ).dimensions(centerX - 102, startY + 120, 100, 20).build();
+        ).dimensions(centerX - 102, startY + 140, 100, 20).build();
         this.addDrawableChild(saveButton);
 
         // Cancel button
         this.cancelButton = ButtonWidget.builder(
             Text.literal("취소"),
             button -> this.close()
-        ).dimensions(centerX + 2, startY + 120, 100, 20).build();
+        ).dimensions(centerX + 2, startY + 140, 100, 20).build();
         this.addDrawableChild(cancelButton);
 
         LOGGER.info("[Client Settings] Screen initialized");
@@ -145,6 +159,17 @@ public class ClientSettingsScreen extends Screen {
             0xFFFFFFFF,
             true
         );
+
+        // HUD description
+        String hudDesc = "§7주력·신체강화·슬롯 HUD 표시";
+        context.drawText(
+            this.textRenderer,
+            Text.literal(hudDesc),
+            centerX - this.textRenderer.getWidth(hudDesc) / 2,
+            startY + 122,
+            0xFFFFFFFF,
+            true
+        );
     }
 
     @Override
@@ -158,12 +183,13 @@ public class ClientSettingsScreen extends Screen {
      * Save settings to PlayerData and optionally send to server
      */
     private void saveSettings() {
-        LOGGER.info("[Client Settings] Saving settings: postProcessing={}, domainEffects={}",
-            postProcessingEnabled, domainEffectsEnabled);
+        LOGGER.info("[Client Settings] Saving settings: postProcessing={}, domainEffects={}, hud={}",
+            postProcessingEnabled, domainEffectsEnabled, hudEnabled);
 
         // Update PlayerData
         PlayerData.setPostProcessingEnabled(postProcessingEnabled);
         PlayerData.setDomainEffectsEnabled(domainEffectsEnabled);
+        PlayerData.setHudEnabled(hudEnabled);
 
         // Apply post-processing setting immediately
         if (!postProcessingEnabled) {

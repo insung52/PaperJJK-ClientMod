@@ -62,6 +62,8 @@ public class ClientPacketHandler {
                         case PacketIds.SIMPLE_DOMAIN_POWER_SYNC -> handleSimpleDomainPowerSync(context.client(), buf);
                         case PacketIds.SIMPLE_DOMAIN_DEACTIVATE -> handleSimpleDomainDeactivate(context.client(), buf);
                         case PacketIds.SIMPLE_DOMAIN_TRANSLATE -> handleSimpleDomainTranslate(context.client(), buf);
+                        case PacketIds.SLOT_GAUGE_UPDATE -> handleSlotGaugeUpdate(context.client(), buf);
+                        case PacketIds.BODY_REIN_UPDATE  -> handleBodyReinUpdate(context.client(), buf);
                         default -> LOGGER.warn("Unknown packet ID: 0x{}", String.format("%02X", packetId));
                     }
                 } catch (Exception e) {
@@ -536,6 +538,8 @@ public class ClientPacketHandler {
         int maxCurseEnergy = buf.readInt();
         boolean hasRCT = buf.readBoolean();
         int domainLevel = buf.readInt();
+        int efficiencyLevel = buf.readInt();
+        boolean canGraspAirSurface = buf.readBoolean();
         String slot1 = readUTF(buf);
         String slot2 = readUTF(buf);
         String slot3 = readUTF(buf);
@@ -551,7 +555,7 @@ public class ClientPacketHandler {
         client.execute(() -> {
             com.justheare.paperjjk_client.data.PlayerData.updatePlayerInfo(
                 naturaltech, curseEnergy, maxCurseEnergy, hasRCT, domainLevel,
-                slot1, slot2, slot3, slot4
+                slot1, slot2, slot3, slot4, efficiencyLevel, canGraspAirSurface
             );
 
             // Update available skills
@@ -781,6 +785,41 @@ public class ClientPacketHandler {
             LOGGER.info("[Simple Domain] TRANSLATE: loc=({},{},{}), caster={}",
                 String.format("%.2f", locX), String.format("%.2f", locY), String.format("%.2f", locZ), casterUuid);
         });
+    }
+
+    /**
+     * SLOT_GAUGE_UPDATE (0x30) - 슬롯 X/C/V/B 의 상태·게이지·자물쇠·레이블
+     * Format: 4회 반복 — [state(1)][gauge(1, 0~100)][locked(bool)][label(UTF)]
+     */
+    private static void handleSlotGaugeUpdate(MinecraftClient client, PacketByteBuf buf) {
+        byte[]    states = new byte[4];
+        float[]   gauges = new float[4];
+        boolean[] locked = new boolean[4];
+        String[]  labels = new String[4];
+        for (int i = 0; i < 4; i++) {
+            states[i] = buf.readByte();
+            gauges[i] = (buf.readUnsignedByte()) / 100f;
+            locked[i] = buf.readBoolean();
+            labels[i] = readUTF(buf);
+        }
+        client.execute(() -> {
+            for (int i = 0; i < 4; i++) {
+                byte slot = (byte)(i + 1);
+                ClientGameData.setSlotState(slot, states[i]);
+                ClientGameData.setSlotGauge(slot, gauges[i]);
+                ClientGameData.setSlotLocked(slot, locked[i]);
+                ClientGameData.setSlotLabel(slot, labels[i]);
+            }
+        });
+    }
+
+    /**
+     * BODY_REIN_UPDATE (0x31) - 신체강화 비율
+     * Format: [ratio(1, 0~100)]
+     */
+    private static void handleBodyReinUpdate(MinecraftClient client, PacketByteBuf buf) {
+        float ratio = (buf.readUnsignedByte()) / 100f;
+        client.execute(() -> ClientGameData.setBodyReinforcement(ratio));
     }
 
     /**

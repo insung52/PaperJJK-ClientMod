@@ -249,7 +249,9 @@ public class SkillEditorScreen extends Screen {
             slot1,
             slot2,
             slot3,
-            slot4
+            slot4,
+            PlayerData.getEfficiencyLevel(),
+            PlayerData.canGraspAirSurface()
         );
 
         // Close screen
