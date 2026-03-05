@@ -65,6 +65,7 @@ public class ClientPacketHandler {
                         case PacketIds.SLOT_GAUGE_UPDATE -> handleSlotGaugeUpdate(context.client(), buf);
                         case PacketIds.BODY_REIN_UPDATE  -> handleBodyReinUpdate(context.client(), buf);
                         case PacketIds.KAI_SLASH         -> handleKaiSlash(context.client(), buf);
+                        case PacketIds.HACHI_SLASH       -> handleHachiSlash(context.client(), buf);
                         default -> LOGGER.warn("Unknown packet ID: 0x{}", String.format("%02X", packetId));
                     }
                 } catch (Exception e) {
@@ -821,6 +822,21 @@ public class ClientPacketHandler {
     private static void handleBodyReinUpdate(MinecraftClient client, PacketByteBuf buf) {
         float ratio = (buf.readUnsignedByte()) / 100f;
         client.execute(() -> ClientGameData.setBodyReinforcement(ratio));
+    }
+
+    /**
+     * HACHI_SLASH (0x33) — 팔(Hachi) 격자 참격 화면 효과
+     * Format: [hitX(4)][hitY(4)][hitZ(4)]
+     */
+    private static void handleHachiSlash(MinecraftClient client, PacketByteBuf buf) {
+        float hitX = buf.readFloat();
+        float hitY = buf.readFloat();
+        float hitZ = buf.readFloat();
+
+        client.execute(() -> {
+            com.justheare.paperjjk_client.shader.HachiSlashEffectManager.addEffect(hitX, hitY, hitZ);
+            LOGGER.debug("[Hachi Slash] effect at ({},{},{})", hitX, hitY, hitZ);
+        });
     }
 
     /**

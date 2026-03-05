@@ -3,6 +3,7 @@ package com.justheare.paperjjk_client.mixin.client;
 import com.justheare.paperjjk_client.render.DebugRenderer;
 import com.justheare.paperjjk_client.render.JJKDepthCache;
 import com.justheare.paperjjk_client.shader.DomainEffectManager;
+import com.justheare.paperjjk_client.shader.HachiSlashEffectManager;
 import com.justheare.paperjjk_client.shader.KaiSlashEffectManager;
 import com.justheare.paperjjk_client.shader.RefractionEffectManager;
 import com.justheare.paperjjk_client.util.WorldToScreenUtil;
@@ -40,6 +41,9 @@ public class GameRendererMixin {
     private static final Identifier KAI_SLASH_EFFECT_ID =
         Identifier.of("paperjjk-client", "kai_slash");
 
+    private static final Identifier HACHI_SLASH_EFFECT_ID =
+        Identifier.of("paperjjk-client", "hachi_slash");
+
     /**
      * Apply refraction post-processing BEFORE the HUD renders.
      * This ensures the crosshair, health bar, hotbar etc. are NOT distorted.
@@ -65,7 +69,8 @@ public class GameRendererMixin {
         // Nothing to do if no effects of any kind are active
         List<RefractionEffectManager.RefractionEffect> effects = RefractionEffectManager.getEffects();
         if (effects.isEmpty() && !DomainEffectManager.hasActiveDomains()
-                && !KaiSlashEffectManager.isAnyActive()) return;
+                && !KaiSlashEffectManager.isAnyActive()
+                && !HachiSlashEffectManager.hasActiveEffects()) return;
 
         Camera camera = client.gameRenderer.getCamera();
         // Use the actual dynamic FOV (includes sprint/fly/speed effect/bow draw modifiers)
@@ -179,6 +184,36 @@ public class GameRendererMixin {
                         KaiSlashEffectManager.getBloomWidth() * distScale,
                         1.0f, e.getTime());
                     kaiProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
+                }
+            }
+        }
+
+        // ── Hachi slash (팔) — 격자 참격, 인스턴스당 1 pass ─────────────────────
+        List<HachiSlashEffectManager.HachiSlashEffect> hachiEffects = HachiSlashEffectManager.getActiveEffects();
+        if (!hachiEffects.isEmpty()) {
+            PostEffectProcessor hachiProcessor;
+            try {
+                hachiProcessor = client.getShaderLoader().loadPostEffect(
+                    HACHI_SLASH_EFFECT_ID,
+                    Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN)
+                );
+            } catch (Exception e) {
+                System.err.println("[JJKMixin] Failed to load hachi_slash post effect: " + e.getMessage());
+                hachiProcessor = null;
+            }
+            if (hachiProcessor != null) {
+                for (HachiSlashEffectManager.HachiSlashEffect e : hachiEffects) {
+                    Vec3d center = new Vec3d(e.worldX, e.worldY, e.worldZ);
+                    Vec3d sp = WorldToScreenUtil.worldToScreen(center, camera, projectionMatrix);
+                    if (sp == null) continue;
+
+                    float cx = (float) sp.x;
+                    float cy = 1.0f - (float) sp.y;  // WorldToScreenUtil y=0 위쪽 → 셰이더 y=0 아래쪽
+                    float dist = (float) sp.z;
+                    float distScale = 3.0f / Math.max(3.0f, dist);
+                    updateHachiSlashUniforms(hachiProcessor, cx, cy, e.angle, e.getTime(),
+                            e.skewAngle, distScale);
+                    hachiProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
                 }
             }
         }
@@ -371,6 +406,71 @@ public class GameRendererMixin {
             }
         } catch (Exception e) {
             System.err.println("[JJKMixin] updateKaiSlashUniforms failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Updates the HachiSlashConfig uniform buffer.
+     *
+     * std140 layout:
+     *   vec2  Center    →  8 bytes
+     *   float Angle     →  4 bytes
+     *   float Time      →  4 bytes
+     *   float SkewAngle →  4 bytes
+     *   float DistScale →  4 bytes
+     *   Total           = 24 bytes
+     */
+    @SuppressWarnings("unchecked")
+    private void updateHachiSlashUniforms(PostEffectProcessor processor,
+                                          float cx, float cy, float angle, float time,
+                                          float skewAngle, float distScale) {
+        try {
+            java.lang.reflect.Field passesField = null;
+            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
+                if (java.util.List.class.isAssignableFrom(f.getType())) { passesField = f; break; }
+            }
+            if (passesField == null) return;
+            passesField.setAccessible(true);
+            List<?> passes = (List<?>) passesField.get(processor);
+            if (passes.isEmpty()) return;
+            Object firstPass = passes.get(0);
+
+            java.lang.reflect.Field ubField = null;
+            for (java.lang.reflect.Field f : firstPass.getClass().getDeclaredFields()) {
+                if (java.util.Map.class.isAssignableFrom(f.getType())) { ubField = f; break; }
+            }
+            if (ubField == null) return;
+            ubField.setAccessible(true);
+            java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> ubs =
+                (java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>) ubField.get(firstPass);
+
+            com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("HachiSlashConfig");
+            if (buf == null) return;
+
+            if ((buf.usage() & 8) == 0 || buf.size() < 24) {
+                buf.close();
+                com.mojang.blaze3d.buffers.GpuBuffer newBuf =
+                    RenderSystem.getDevice().createBuffer(() -> "JJK HachiSlashConfig", 8 | 128, 24);
+                ubs.put("HachiSlashConfig", newBuf);
+                buf = newBuf;
+            }
+
+            org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush();
+            try {
+                com.mojang.blaze3d.buffers.Std140Builder b =
+                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 24);
+                b.putVec2(cx, cy);
+                b.putFloat(angle);
+                b.putFloat(time);
+                b.putFloat(skewAngle);
+                b.putFloat(distScale);
+                RenderSystem.getDevice().createCommandEncoder()
+                    .writeToBuffer(buf.slice(), b.get());
+            } finally {
+                stack.pop();
+            }
+        } catch (Exception e) {
+            System.err.println("[JJKMixin] updateHachiSlashUniforms failed: " + e.getMessage());
         }
     }
 
