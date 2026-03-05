@@ -16,7 +16,7 @@ out vec4 fragColor;
 
 const float ASPECT          = 16.0 / 9.0;
 const float CORE_HALF_W     = 0.0012;
-const float BLOOM_WIDTH     = 0.004;
+const float BLOOM_WIDTH     = 0.002;
 const float SPACING         = 0.038;
 const float BASE_HALF_LEN   = 0.10;
 const float TIME_OFFSET_MAX = 0.15; // 선별 최대 시간차 (초)
@@ -48,7 +48,7 @@ LineResult parallelLines(vec2 rot, float setId) {
     float rndLen  = hash(tileIdx * 3.7  + setId * 137.1);
     float rndTime = hash(tileIdx * 5.3  + setId * 91.7);
 
-    float halfLen    = BASE_HALF_LEN * (1.0 + rndLen * 0.5);
+    float halfLen    = BASE_HALF_LEN * (1.5 + rndLen * 2.5);
     float timeOffset = rndTime * TIME_OFFSET_MAX;
 
     // 선 자체의 정규화 시간 (0 ~ 1, LINE_ANIM_DUR 기준)
@@ -88,22 +88,24 @@ void main() {
                      -rel.x * sinB + rel.y * cosB);
     LineResult lrB = parallelLines(rotB, 1.0);
 
-    // 두 집합 합성: 가까운 선 기준
-    float d, fade;
-    if (lrA.d < lrB.d) {
-        d = lrA.d; fade = lrA.fade;
-    } else {
-        d = lrB.d; fade = lrB.fade;
-    }
+    // 두 집합 각각 독립 계산 후 누적 합산 (교차점에서 양쪽 bloom 모두 표시)
 
-    // 코어 (검정)
-    float inCore_raw = step(d, CORE_HALF_W);
-    float inCore     = inCore_raw * fade;
+    // 집합 A
+    float inCoreA_raw = step(lrA.d, CORE_HALF_W);
+    float bloomTA     = 1.0 - smoothstep(CORE_HALF_W, CORE_HALF_W + BLOOM_WIDTH, lrA.d);
+    float bloomA      = bloomTA * bloomTA * (1.0 - inCoreA_raw) * lrA.fade;
+    float inCoreA     = inCoreA_raw * lrA.fade;
 
-    // bloom (흰색, 코어 침범 금지)
-    float bloomRaw  = (1.0 - smoothstep(CORE_HALF_W, CORE_HALF_W + BLOOM_WIDTH, d))
-                    * (1.0 - inCore_raw);
-    float bloomFact = bloomRaw * fade;
+    // 집합 B
+    float inCoreB_raw = step(lrB.d, CORE_HALF_W);
+    float bloomTB     = 1.0 - smoothstep(CORE_HALF_W, CORE_HALF_W + BLOOM_WIDTH, lrB.d);
+    float bloomB      = bloomTB * bloomTB * (1.0 - inCoreB_raw) * lrB.fade;
+    float inCoreB     = inCoreB_raw * lrB.fade;
+
+    // 코어: 어느 한쪽이라도 코어면 검정 (max)
+    float inCore    = max(inCoreA, inCoreB);
+    // bloom: 두 집합 합산 — 교차점에서 더 밝게 보임
+    float bloomFact = bloomA + bloomB;
 
     vec4 orig   = texture(InSampler, texCoord);
     vec4 result = orig;

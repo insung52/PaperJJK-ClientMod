@@ -34,7 +34,7 @@ public class KaiSlashEffectManager {
     private static float p1x = 0.3f,  p1y = 0.65f;
     private static float p2x = 0.7f,  p2y = 0.35f;
     private static float coreHalfWidth = 0.002f;
-    private static float bloomWidth    = 0.0075f;
+    private static float bloomWidth    = 0.0035f;
     private static float alpha         = 1.0f;
 
     public static boolean isDebugActive() { return debugActive; }

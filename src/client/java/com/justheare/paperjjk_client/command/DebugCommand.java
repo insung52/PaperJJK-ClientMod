@@ -51,6 +51,9 @@ public class DebugCommand {
                 .then(literal("kai")
                     .executes(DebugCommand::toggleKaiSlash)
                 )
+                .then(literal("ambientslash")
+                    .executes(DebugCommand::toggleAmbientSlash)
+                )
         );
     }
 
@@ -225,6 +228,15 @@ public class DebugCommand {
         boolean active = com.justheare.paperjjk_client.shader.KaiSlashEffectManager.isDebugActive();
         context.getSource().sendFeedback(
             Text.literal("§d[PaperJJK] §f참격(해) 효과 §" + (active ? "aON" : "cOFF"))
+        );
+        return 1;
+    }
+
+    private static int toggleAmbientSlash(CommandContext<FabricClientCommandSource> context) {
+        com.justheare.paperjjk_client.shader.AmbientKaiSlashManager.toggle();
+        boolean active = com.justheare.paperjjk_client.shader.AmbientKaiSlashManager.isActive();
+        context.getSource().sendFeedback(
+            Text.literal("§d[PaperJJK] §f결없영 참격 효과 §" + (active ? "aON" : "cOFF"))
         );
         return 1;
     }

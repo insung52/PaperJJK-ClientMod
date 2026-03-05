@@ -2,6 +2,7 @@ package com.justheare.paperjjk_client.mixin.client;
 
 import com.justheare.paperjjk_client.render.DebugRenderer;
 import com.justheare.paperjjk_client.render.JJKDepthCache;
+import com.justheare.paperjjk_client.shader.AmbientKaiSlashManager;
 import com.justheare.paperjjk_client.shader.DomainEffectManager;
 import com.justheare.paperjjk_client.shader.HachiSlashEffectManager;
 import com.justheare.paperjjk_client.shader.KaiSlashEffectManager;
@@ -44,6 +45,9 @@ public class GameRendererMixin {
     private static final Identifier HACHI_SLASH_EFFECT_ID =
         Identifier.of("paperjjk-client", "hachi_slash");
 
+    private static final Identifier AMBIENT_KAI_SLASH_EFFECT_ID =
+        Identifier.of("paperjjk-client", "ambient_kai_slash");
+
     /**
      * Apply refraction post-processing BEFORE the HUD renders.
      * This ensures the crosshair, health bar, hotbar etc. are NOT distorted.
@@ -70,7 +74,8 @@ public class GameRendererMixin {
         List<RefractionEffectManager.RefractionEffect> effects = RefractionEffectManager.getEffects();
         if (effects.isEmpty() && !DomainEffectManager.hasActiveDomains()
                 && !KaiSlashEffectManager.isAnyActive()
-                && !HachiSlashEffectManager.hasActiveEffects()) return;
+                && !HachiSlashEffectManager.hasActiveEffects()
+                && !AmbientKaiSlashManager.isActive()) return;
 
         Camera camera = client.gameRenderer.getCamera();
         // Use the actual dynamic FOV (includes sprint/fly/speed effect/bow draw modifiers)
@@ -215,6 +220,69 @@ public class GameRendererMixin {
                             e.skewAngle, distScale);
                     hachiProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
                 }
+            }
+        }
+
+        // ── Ambient Kai Slash (결없영 배경 참격) — screen-space 2D, 단일 pass ──
+        if (AmbientKaiSlashManager.isActive()) {
+            PostEffectProcessor ambientProcessor;
+            try {
+                ambientProcessor = client.getShaderLoader().loadPostEffect(
+                    AMBIENT_KAI_SLASH_EFFECT_ID,
+                    Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN)
+                );
+            } catch (Exception e) {
+                System.err.println("[JJKMixin] Failed to load ambient_kai_slash post effect: " + e.getMessage());
+                ambientProcessor = null;
+            }
+            if (ambientProcessor != null) {
+                AmbientKaiSlashManager.AmbientSlash[] slashes = AmbientKaiSlashManager.getSlashes();
+
+                // Slashes[i*2]   = (p1x, p1y, p2x, p2y)
+                // Slashes[i*2+1] = (headT, tailT, fade, 0)
+                final int SLOT = 8; // floats per slash
+                float[] slashData = new float[AmbientKaiSlashManager.MAX_SLASHES * SLOT];
+                int activeCount = 0;
+
+                for (AmbientKaiSlashManager.AmbientSlash slash : slashes) {
+                    float localT = slash.getLocalT();  // 사이클 완료 시 자동 regenerate
+                    float fade   = slash.getFade(localT);
+                    if (fade < 0.002f) continue;
+
+                    // 슬래시 끝점 (full halfLen — kai는 길이 고정, 스윕으로 애니메이션)
+                    Vec3d ep1 = new Vec3d(
+                        AmbientKaiSlashManager.sphereX + slash.sx + slash.dx * slash.halfLen,
+                        AmbientKaiSlashManager.sphereY + slash.sy + slash.dy * slash.halfLen,
+                        AmbientKaiSlashManager.sphereZ + slash.sz + slash.dz * slash.halfLen);
+                    Vec3d ep2 = new Vec3d(
+                        AmbientKaiSlashManager.sphereX + slash.sx - slash.dx * slash.halfLen,
+                        AmbientKaiSlashManager.sphereY + slash.sy - slash.dy * slash.halfLen,
+                        AmbientKaiSlashManager.sphereZ + slash.sz - slash.dz * slash.halfLen);
+
+                    Vec3d sp1 = WorldToScreenUtil.worldToScreen(ep1, camera, projectionMatrix);
+                    Vec3d sp2 = WorldToScreenUtil.worldToScreen(ep2, camera, projectionMatrix);
+                    if (sp1 == null || sp2 == null) continue;
+
+                    float headT = slash.getHeadT(localT);
+                    float tailT = slash.getTailT(localT);
+
+                    // WorldToScreenUtil: y=0 위쪽 → 셰이더 texCoord: y=0 아래쪽
+                    int base = activeCount * SLOT;
+                    slashData[base    ] = (float) sp1.x;
+                    slashData[base + 1] = 1.0f - (float) sp1.y;
+                    slashData[base + 2] = (float) sp2.x;
+                    slashData[base + 3] = 1.0f - (float) sp2.y;
+                    slashData[base + 4] = headT;
+                    slashData[base + 5] = tailT;
+                    slashData[base + 6] = fade;
+                    // base+7 = 0 (padding, array is zero-initialized)
+
+                    activeCount++;
+                    if (activeCount >= AmbientKaiSlashManager.MAX_SLASHES) break;
+                }
+
+                updateAmbientKaiUniforms(ambientProcessor, activeCount, slashData);
+                ambientProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
             }
         }
 
@@ -543,6 +611,95 @@ public class GameRendererMixin {
             }
         } catch (Exception e) {
             System.err.println("[JJKMixin] updateDomainUniforms failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Updates the AmbientKaiConfig uniform buffer.
+     *
+     * std140 layout:
+     *   float SlashCount    →  4 bytes
+     *   float CoreHalfWidth →  4 bytes
+     *   float BloomWidth    →  4 bytes
+     *   float _pad          →  4 bytes
+     *   vec4  Slashes[64]   → 64 × 16 = 1024 bytes
+     *   Total               = 1040 bytes
+     *
+     * slashData: float[] of length slashCount × 8
+     *   [i*8+0..3] = p1x, p1y, p2x, p2y  (screen texCoord UV)
+     *   [i*8+4]    = fade
+     *   [i*8+5..7] = 0 (padding)
+     */
+    @SuppressWarnings("unchecked")
+    private void updateAmbientKaiUniforms(PostEffectProcessor processor,
+                                           int slashCount, float[] slashData) {
+        try {
+            java.lang.reflect.Field passesField = null;
+            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
+                if (java.util.List.class.isAssignableFrom(f.getType())) { passesField = f; break; }
+            }
+            if (passesField == null) return;
+            passesField.setAccessible(true);
+            List<?> passes = (List<?>) passesField.get(processor);
+            if (passes.isEmpty()) return;
+            Object firstPass = passes.get(0);
+
+            java.lang.reflect.Field ubField = null;
+            for (java.lang.reflect.Field f : firstPass.getClass().getDeclaredFields()) {
+                if (java.util.Map.class.isAssignableFrom(f.getType())) { ubField = f; break; }
+            }
+            if (ubField == null) return;
+            ubField.setAccessible(true);
+            java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> ubs =
+                (java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>) ubField.get(firstPass);
+
+            com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("AmbientKaiConfig");
+            if (buf == null) return;
+
+            // std140: 16(header) + 256×vec4(4096) = 4112 bytes  (128슬래시 × 2 vec4)
+            final int REQUIRED = 4112;
+            if ((buf.usage() & 8) == 0 || buf.size() < REQUIRED) {
+                buf.close();
+                com.mojang.blaze3d.buffers.GpuBuffer newBuf =
+                    RenderSystem.getDevice().createBuffer(() -> "JJK AmbientKaiConfig", 8 | 128, REQUIRED);
+                ubs.put("AmbientKaiConfig", newBuf);
+                buf = newBuf;
+            }
+
+            org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush();
+            try {
+                com.mojang.blaze3d.buffers.Std140Builder b =
+                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, REQUIRED);
+
+                // Header (16 bytes)
+                b.putFloat((float) slashCount);
+                b.putFloat(AmbientKaiSlashManager.CORE_HALF_WIDTH);
+                b.putFloat(AmbientKaiSlashManager.BLOOM_WIDTH);
+                b.putFloat(0.0f);
+
+                // Slashes array: 256 vec4 (2 per slash × 128 슬래시)
+                int maxSlashes = AmbientKaiSlashManager.MAX_SLASHES;
+                for (int i = 0; i < maxSlashes; i++) {
+                    if (i < slashCount) {
+                        int base = i * 8;
+                        // vec4: p1x, p1y, p2x, p2y
+                        b.putVec4(slashData[base], slashData[base + 1],
+                                  slashData[base + 2], slashData[base + 3]);
+                        // vec4: headT, tailT, fade, 0
+                        b.putVec4(slashData[base + 4], slashData[base + 5], slashData[base + 6], 0f);
+                    } else {
+                        b.putVec4(0f, 0f, 0f, 0f);
+                        b.putVec4(0f, 0f, 0f, 0f);
+                    }
+                }
+
+                RenderSystem.getDevice().createCommandEncoder()
+                    .writeToBuffer(buf.slice(), b.get());
+            } finally {
+                stack.pop();
+            }
+        } catch (Exception e) {
+            System.err.println("[JJKMixin] updateAmbientKaiUniforms failed: " + e.getMessage());
         }
     }
 

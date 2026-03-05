@@ -46,8 +46,9 @@ void main() {
 
     // ── 코어 · bloom 계산 (lenFactor 마지막에 적용) ──────────────────────
     float inCore_raw = step(perp_dist, CoreHalfWidth);
-    float bloomRaw   = (1.0 - smoothstep(CoreHalfWidth, CoreHalfWidth + BloomWidth, perp_dist))
-                       * (1.0 - inCore_raw);   // 코어 안에는 bloom 침범 금지
+    float bloomT     = 1.0 - smoothstep(CoreHalfWidth, CoreHalfWidth + BloomWidth, perp_dist);
+    float bloomRaw   = bloomT * bloomT               // 2제곱: 빠른 감쇠
+                       * (1.0 - inCore_raw);         // 코어 안에는 bloom 침범 금지
 
     float inCore    = inCore_raw * lenFactor;
     float bloomFact = bloomRaw   * lenFactor;

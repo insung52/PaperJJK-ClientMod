@@ -1,0 +1,42 @@
+{
+    "targets": {
+        "swap": {}
+    },
+    "passes": [
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "paperjjk-client:post/ambient_kai_slash",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "minecraft:main"
+                }
+            ],
+            "output": "swap",
+            "uniforms": {
+                "AmbientKaiConfig": [
+                    { "name": "SlashCount",    "type": "float", "value": 0.0 },
+                    { "name": "CoreHalfWidth", "type": "float", "value": 0.002 },
+                    { "name": "BloomWidth",    "type": "float", "value": 0.0035 },
+                    { "name": "_pad",          "type": "float", "value": 0.0 }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "minecraft:post/blit",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "swap"
+                }
+            ],
+            "uniforms": {
+                "BlitConfig": [
+                    { "name": "ColorModulate", "type": "vec4", "value": [1.0, 1.0, 1.0, 1.0] }
+                ]
+            },
+            "output": "minecraft:main"
+        }
+    ]
+}
