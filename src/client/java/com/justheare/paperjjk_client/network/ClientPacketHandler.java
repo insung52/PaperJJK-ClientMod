@@ -124,13 +124,13 @@ public class ClientPacketHandler {
                         ClientGameData.ActiveDomain domain = new ClientGameData.ActiveDomain();
                         domain.domainId = domainId;
                         domain.center = new net.minecraft.util.math.Vec3d(centerX, centerY, centerZ);
-                        domain.currentRadius = 0.0f;
                         domain.maxRadius = maxRadius;
-                        domain.expansionSpeed = 0f;
-                        domain.color = 0;
                         domain.domainType = domainType;
                         domain.lastSyncTime = System.currentTimeMillis();
+                        domain.color = 0;
                         domain.serverRadius = 0.0f;
+                        domain.currentRadius = 0.0f;
+                        domain.expansionSpeed = 0f;
                         domain.isExpanding = true;
                         ClientGameData.addDomain(domainId, domain);
 
@@ -140,7 +140,7 @@ public class ClientPacketHandler {
                                 new net.minecraft.util.math.Vec3d(centerX, centerY, centerZ);
                             com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
                                 .setDomain(domainId, center, 0f);
-                            LOGGER.info("[Domain Visual] MIZUSHI START → ambient slash activated");
+                            LOGGER.info("[Domain Visual] MIZUSHI START → ambient slash activated, radius=0 (will grow via sync)");
                         }
 
                         LOGGER.info("[Domain Visual] START: id={}, type={}, center=({},{},{}), maxRadius={}, isOpen={}",
