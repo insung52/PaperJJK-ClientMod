@@ -1,14 +1,16 @@
 #version 330
 
 uniform sampler2D InSampler;
+uniform sampler2D DepthSampler;
 
-// std140: vec2(8) + float(4)*4 = 24 bytes
+// std140: vec2(8) + float(4)*5 = 28 bytes
 layout(std140) uniform HachiSlashConfig {
     vec2  Center;    // 화면 UV 중심 (y=0 바닥)
     float Angle;     // 선 집합 A 각도 (라디안)
     float Time;      // 경과 시간 (초), 0 ~ ~0.35
     float SkewAngle; // 선 집합 B 각도 (Angle + 70~110°)
     float DistScale; // 거리 스케일 (1.0 = 3블록, 감소 → 더 먼 거리)
+    float Depth;     // 중심점 NDC depth [0,1]
 };
 
 in vec2 texCoord;
@@ -54,13 +56,15 @@ LineResult parallelLines(vec2 rot, float setId) {
     // 선 자체의 정규화 시간 (0 ~ 1, LINE_ANIM_DUR 기준)
     float localT = clamp((Time - timeOffset) / LINE_ANIM_DUR, 0.0, 1.0);
 
-    // 길이: 삼각형 커브 — 중심에서 퍼지고 → 중심으로 수렴
-    float lenFrac    = smoothstep(0.0, 0.45, localT) * (1.0 - smoothstep(0.55, 1.0, localT));
-    float currentLen = lenFrac * halfLen;
+    // 등장: 중심에서 양끝으로 확장
+    float currentLen = smoothstep(0.0, 0.45, localT) * halfLen;
+    // 소멸: 중심에 구멍이 생겨 양끝 방향으로 확장 (중간→양끝으로 사라짐)
+    float innerLen   = smoothstep(0.55, 1.0, localT) * halfLen;
 
-    // 캡슐 SDF
+    // 캡슐 SDF (중심 구멍 포함)
     float paraOver = max(0.0, abs(rot.x) - currentLen);
-    float d = length(vec2(abs(phase), paraOver));
+    float paraIn   = max(0.0, innerLen   - abs(rot.x));
+    float d = length(vec2(abs(phase), max(paraOver, paraIn)));
 
     // 불투명도 (길이와 함께 fade in/out)
     float fade = smoothstep(0.0, 0.1, localT) * (1.0 - smoothstep(0.9, 1.0, localT));
@@ -106,6 +110,13 @@ void main() {
     float inCore    = max(inCoreA, inCoreB);
     // bloom: 두 집합 합산 — 교차점에서 더 밝게 보임
     float bloomFact = bloomA + bloomB;
+
+    // ── Depth 테스트: 이펙트 중심이 geometry 뒤에 있는 픽셀은 스킵 ────────────
+    float worldDepth = texture(DepthSampler, texCoord).r;
+    if (Depth > worldDepth) {
+        fragColor = texture(InSampler, texCoord);
+        return;
+    }
 
     vec4 orig   = texture(InSampler, texCoord);
     vec4 result = orig;

@@ -10,6 +10,11 @@
                 {
                     "sampler_name": "In",
                     "target": "minecraft:main"
+                },
+                {
+                    "sampler_name": "Depth",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
                 }
             ],
             "output": "swap",
@@ -19,7 +24,8 @@
                     { "name": "Angle",     "type": "float", "value": 0.0 },
                     { "name": "Time",      "type": "float", "value": 0.0 },
                     { "name": "SkewAngle", "type": "float", "value": 1.5707963 },
-                    { "name": "DistScale", "type": "float", "value": 1.0 }
+                    { "name": "DistScale", "type": "float", "value": 1.0 },
+                    { "name": "Depth",     "type": "float", "value": 0.0 }
                 ]
             }
         },

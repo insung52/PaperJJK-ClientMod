@@ -263,17 +263,17 @@ public class JJKKeyBinds {
     }
 
     /**
-     * Space 대쉬.
-     * 신체강화 주력이 존재하면 Space 단독으로 대쉬 패킷 전송.
+     * Z + Space 대쉬.
+     * 신체강화 주력이 존재하고 Z 키를 누른 상태에서 Space 를 누르면 대쉬 패킷 전송.
      */
     private static void processDash(MinecraftClient client, long windowHandle) {
         boolean currentSpacePressed = GLFW.glfwGetKey(windowHandle, GLFW.GLFW_KEY_SPACE) == GLFW.GLFW_PRESS;
         boolean spaceJustPressed = currentSpacePressed && !spaceWasPressed;
 
-        if (spaceJustPressed && com.justheare.paperjjk_client.data.ClientGameData.getBodyReinforcementRatio() > 0f) {
+        if (spaceJustPressed && rctPressed && com.justheare.paperjjk_client.data.ClientGameData.getBodyReinforcementRatio() > 0f) {
             boolean onGround = client.player != null && client.player.isOnGround();
             sendDashPacket(onGround);
-            LOGGER.info("[Dash] Dash triggered (Space, bodyRein > 0, onGround={})", onGround);
+            LOGGER.info("[Dash] Dash triggered (Z+Space, bodyRein > 0, onGround={})", onGround);
         }
 
         spaceWasPressed = currentSpacePressed;

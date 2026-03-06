@@ -1,8 +1,9 @@
 #version 330
 
 uniform sampler2D InSampler;
+uniform sampler2D DepthSampler;
 
-// std140: vec2(8) + vec2(8) + float(4)*4 = 32 bytes
+// std140: vec2(8) + vec2(8) + float(4)*6 = 40 bytes
 layout(std140) uniform KaiSlashConfig {
     vec2  SlashP1;        // 선분 시작점 (texCoord: y=0 바닥, y=1 천장)
     vec2  SlashP2;        // 선분 끝점
@@ -10,6 +11,8 @@ layout(std140) uniform KaiSlashConfig {
     float BloomWidth;     // 코어 바깥 흰색 bloom 폭
     float Alpha;          // 전체 불투명도 [0, 1]
     float Time;           // 경과 시간(초), 0 ~ 0.2
+    float Depth1;         // P1 의 NDC depth [0,1]
+    float Depth2;         // P2 의 NDC depth [0,1]
 };
 
 in vec2 texCoord;
@@ -45,6 +48,14 @@ void main() {
     float lenFactor = headFade * tailFade;
 
     // ── 코어 · bloom 계산 (lenFactor 마지막에 적용) ──────────────────────
+    // ── Depth 테스트: 슬래시가 geometry 뒤에 있으면 스킵 ─────────────────────
+    float slashDepth = mix(Depth1, Depth2, along_t);
+    float worldDepth = texture(DepthSampler, texCoord).r;
+    if (slashDepth > worldDepth) {
+        fragColor = texture(InSampler, texCoord);
+        return;
+    }
+
     float inCore_raw = step(perp_dist, CoreHalfWidth);
     float bloomT     = 1.0 - smoothstep(CoreHalfWidth, CoreHalfWidth + BloomWidth, perp_dist);
     float bloomRaw   = bloomT * bloomT               // 2제곱: 빠른 감쇠

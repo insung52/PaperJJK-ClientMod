@@ -10,6 +10,11 @@
                 {
                     "sampler_name": "In",
                     "target": "minecraft:main"
+                },
+                {
+                    "sampler_name": "Depth",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
                 }
             ],
             "output": "swap",
@@ -20,7 +25,9 @@
                     { "name": "CoreHalfWidth", "type": "float", "value": 0.004 },
                     { "name": "BloomWidth",    "type": "float", "value": 0.015 },
                     { "name": "Alpha",         "type": "float", "value": 1.0 },
-                    { "name": "Time",          "type": "float", "value": 0.0 }
+                    { "name": "Time",          "type": "float", "value": 0.0 },
+                    { "name": "Depth1",        "type": "float", "value": 0.0 },
+                    { "name": "Depth2",        "type": "float", "value": 0.0 }
                 ]
             }
         },

@@ -1,23 +1,25 @@
 #version 330
 
 uniform sampler2D InSampler;
+uniform sampler2D DepthSampler;
 
-// std140: float*4 header(16) + vec4[256] array(4096) = 4112 bytes
-// Slashes[i*2]   = (p1x, p1y, p2x, p2y)  — texCoord UV (y=0 바닥)
-// Slashes[i*2+1] = (headT, tailT, fade, 0)
+// std140: float*4 header(16) + vec4[384] array(6144) = 6160 bytes
+// Slashes[i*3]   = (p1x, p1y, p2x, p2y)       — texCoord UV (y=0 바닥)
+// Slashes[i*3+1] = (headT, tailT, fade, distScale)
+// Slashes[i*3+2] = (depth1, depth2, 0, 0)      — NDC depth [0,1]
 layout(std140) uniform AmbientKaiConfig {
     float SlashCount;    // 활성 참격 수
     float CoreHalfWidth;
     float BloomWidth;
     float _pad;
-    vec4  Slashes[256];  // 128슬래시 × 2 vec4
+    vec4  Slashes[384];  // 128슬래시 × 3 vec4
 };
 
 in vec2 texCoord;
 out vec4 fragColor;
 
-const float ASPECT = 16.0 / 9.0;
-const float SOFT_W = 0.06;  // 선두·꼬리 경계 softness (kai_slash 와 동일)
+const float ASPECT   = 16.0 / 9.0;
+const float SOFT_W   = 0.06;
 
 void main() {
     int  n = int(SlashCount);
@@ -27,12 +29,14 @@ void main() {
     float accumBloom = 0.0;
 
     for (int i = 0; i < n; i++) {
-        vec4  ep   = Slashes[i * 2];
-        vec4  meta = Slashes[i * 2 + 1];
+        vec4  ep        = Slashes[i * 3];
+        vec4  meta      = Slashes[i * 3 + 1];
+        vec4  depthData = Slashes[i * 3 + 2];
 
-        float headT = meta.x;
-        float tailT = meta.y;
-        float fade  = meta.z;
+        float headT     = meta.x;
+        float tailT     = meta.y;
+        float fade      = meta.z;
+        float distScale = meta.w;
 
         if (fade < 0.002) continue;
 
@@ -46,16 +50,25 @@ void main() {
         float along_t = clamp(dot(p - a, ba) / denom, 0.0, 1.0);
         float d       = length(p - a - along_t * ba);
 
-        // Kai 스타일 애니메이션: 선두가 P1→P2 빠르게 횡단, 꼬리가 뒤따름
+        // ── Depth 테스트: 슬래시가 geometry 뒤에 있으면 스킵 ─────────────────
+        float slashDepth = mix(depthData.x, depthData.y, along_t);
+        float worldDepth = texture(DepthSampler, texCoord).r;
+        if (slashDepth > worldDepth) continue;
+
+        // ── 거리 기반 두께 스케일 ────────────────────────────────────────────
+        float coreW  = CoreHalfWidth * distScale;
+        float bloomW = BloomWidth    * distScale;
+
+        // Kai 스타일 애니메이션
         float headFade  = 1.0 - smoothstep(headT - SOFT_W, headT, along_t);
         float tailFade  = smoothstep(tailT, tailT + SOFT_W, along_t);
         float lenFactor = headFade * tailFade * fade;
 
-        // 코어 + bloom (kai_slash 와 동일 공식)
-        float inCore_raw = step(d, CoreHalfWidth);
+        // 코어 + bloom
+        float inCore_raw = step(d, coreW);
         float inCore     = inCore_raw * lenFactor;
 
-        float bloomT = 1.0 - smoothstep(CoreHalfWidth, CoreHalfWidth + BloomWidth, d);
+        float bloomT = 1.0 - smoothstep(coreW, coreW + bloomW, d);
         float bloom  = bloomT * bloomT * (1.0 - inCore_raw) * lenFactor;
 
         accumCore  = max(accumCore, inCore);

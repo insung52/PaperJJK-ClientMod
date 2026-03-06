@@ -1,6 +1,9 @@
 package com.justheare.paperjjk_client.shader;
 
+import net.minecraft.util.math.Vec3d;
+
 import java.util.Random;
+import java.util.UUID;
 
 /**
  * 결없영 배경 참격 효과 매니저.
@@ -8,16 +11,23 @@ import java.util.Random;
  * MAX_SLASHES개 참격 인스턴스를 월드 좌표계에서 관리.
  * 각 슬래시는 한 사이클(kai 스타일: 한쪽→반대쪽 스윕)이 끝나면
  * 새로운 랜덤 위치로 이동한다.
+ *
+ * 서버에서 DOMAIN_VISUAL(MIZUSHI) 패킷을 받으면 setDomain()으로 연동.
+ * 반경^1.3에 비례하여 활성 참격 개수 조절.
  */
 public class AmbientKaiSlashManager {
 
-    public static final int MAX_SLASHES = 128;
+    public static final int MAX_SLASHES = 1280;
 
-    // ── 구 정의 (월드 좌표) ──────────────────────────────────────────────────
-    public static double sphereX      = -100.0;
-    public static double sphereY      =  150.0;
-    public static double sphereZ      =  -50.0;
-    public static float  sphereRadius =   50.0f;
+    /** 슬래시 밀도 계수: count = k * radius^1.3, radius=10 → ~64개 */
+    private static final float DENSITY_K = 3.2f;
+
+    // ── 도메인 연동 상태 ─────────────────────────────────────────────────────
+    private static UUID   activeDomainId = null;
+    /** 참격이 생성되는 구의 중심 (월드 좌표). 서버 도메인 중심으로 업데이트됨. */
+    public static Vec3d  domainCenter   = new Vec3d(-100.0, 150.0, -50.0);
+    /** 현재 도메인 반경 (블록). 참격 분포 구 반경과 활성 개수 계산에 사용. */
+    public static float  domainRadius   = 50.0f;
 
     // ── 시각 파라미터 ────────────────────────────────────────────────────────
     public static final float CORE_HALF_WIDTH = 0.002f;
@@ -55,11 +65,12 @@ public class AmbientKaiSlashManager {
         /** 위치/방향/길이 랜덤 갱신 */
         private void randomize() {
             float x, y, z;
-            float r2 = sphereRadius * sphereRadius;
+            float r = Math.max(1f, domainRadius);
+            float r2 = r * r;
             do {
-                x = (rand.nextFloat() * 2f - 1f) * sphereRadius;
-                y = (rand.nextFloat() * 2f - 1f) * sphereRadius;
-                z = (rand.nextFloat() * 2f - 1f) * sphereRadius;
+                x = (rand.nextFloat() * 2f - 1f) * r;
+                y = (rand.nextFloat() * 2f - 1f) * r;
+                z = (rand.nextFloat() * 2f - 1f) * r;
             } while (x * x + y * y + z * z > r2);
             sx = x; sy = y; sz = z;
 
@@ -74,7 +85,7 @@ public class AmbientKaiSlashManager {
         }
 
         private static float nextPeriod() {
-            return 0.30f + rand.nextFloat() * 0.30f;
+            return 0.15f + rand.nextFloat() * 0.15f;
         }
 
         /**
@@ -138,4 +149,45 @@ public class AmbientKaiSlashManager {
     public static void deactivate() { active = false; }
 
     public static AmbientSlash[] getSlashes() { return slashes; }
+
+    // ── 도메인 연동 API ───────────────────────────────────────────────────────
+
+    /**
+     * MIZUSHI 도메인 시작 시 호출.
+     * 도메인 중심/반경을 설정하고 ambient slash 효과를 활성화한다.
+     */
+    public static void setDomain(UUID id, Vec3d center, float radius) {
+        activeDomainId = id;
+        domainCenter   = center;
+        domainRadius   = Math.max(1f, radius);
+        activate();
+    }
+
+    /**
+     * 서버 SYNC 패킷으로 반경 갱신.
+     */
+    public static void syncDomainRadius(UUID id, float radius) {
+        if (id.equals(activeDomainId)) {
+            domainRadius = Math.max(1f, radius);
+        }
+    }
+
+    /**
+     * 도메인 종료 시 호출 (END/COMPLETE 후 제거).
+     */
+    public static void clearDomain(UUID id) {
+        if (id.equals(activeDomainId)) {
+            activeDomainId = null;
+            deactivate();
+        }
+    }
+
+    /**
+     * 현재 반경에 따른 활성 참격 개수.
+     * count = min(MAX_SLASHES, round(DENSITY_K * radius^1.3))
+     */
+    public static int getActiveSlashCount() {
+        float r = Math.max(0f, domainRadius);
+        return Math.min(MAX_SLASHES, Math.max(1, (int)(DENSITY_K * Math.pow(r, 1.3))));
+    }
 }

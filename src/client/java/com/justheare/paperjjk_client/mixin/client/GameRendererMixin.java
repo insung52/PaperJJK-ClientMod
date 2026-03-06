@@ -153,7 +153,8 @@ public class GameRendererMixin {
                         KaiSlashEffectManager.getCoreHalfWidth(),
                         KaiSlashEffectManager.getBloomWidth(),
                         KaiSlashEffectManager.getAlpha(),
-                        KaiSlashEffectManager.getDebugTime());
+                        KaiSlashEffectManager.getDebugTime(),
+                        0.0f, 0.0f); // 디버그: depth 0 = 항상 앞
                     kaiProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
                 }
 
@@ -183,11 +184,14 @@ public class GameRendererMixin {
                     float dist = (float)((sp1.z + sp2.z) * 0.5);
                     float distScale = 3.0f / Math.max(3.0f, dist);
 
+                    float kDepth1 = WorldToScreenUtil.worldToDepth(p1World, camera, projectionMatrix);
+                    float kDepth2 = WorldToScreenUtil.worldToDepth(p2World, camera, projectionMatrix);
+
                     updateKaiSlashUniforms(kaiProcessor,
                         kp1x, kp1y, kp2x, kp2y,
                         KaiSlashEffectManager.getCoreHalfWidth() * distScale,
                         KaiSlashEffectManager.getBloomWidth() * distScale,
-                        1.0f, e.getTime());
+                        1.0f, e.getTime(), kDepth1, kDepth2);
                     kaiProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
                 }
             }
@@ -216,8 +220,9 @@ public class GameRendererMixin {
                     float cy = 1.0f - (float) sp.y;  // WorldToScreenUtil y=0 위쪽 → 셰이더 y=0 아래쪽
                     float dist = (float) sp.z;
                     float distScale = 3.0f / Math.max(3.0f, dist);
+                    float hDepth = WorldToScreenUtil.worldToDepth(center, camera, projectionMatrix);
                     updateHachiSlashUniforms(hachiProcessor, cx, cy, e.angle, e.getTime(),
-                            e.skewAngle, distScale);
+                            e.skewAngle, distScale, hDepth);
                     hachiProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
                 }
             }
@@ -238,26 +243,32 @@ public class GameRendererMixin {
             if (ambientProcessor != null) {
                 AmbientKaiSlashManager.AmbientSlash[] slashes = AmbientKaiSlashManager.getSlashes();
 
-                // Slashes[i*2]   = (p1x, p1y, p2x, p2y)
-                // Slashes[i*2+1] = (headT, tailT, fade, 0)
-                final int SLOT = 8; // floats per slash
+                // Slashes[i*3]   = (p1x, p1y, p2x, p2y)
+                // Slashes[i*3+1] = (headT, tailT, fade, distScale)
+                // Slashes[i*3+2] = (depth1, depth2, 0, 0)
+                final int SLOT = 12; // floats per slash (3 vec4)
                 float[] slashData = new float[AmbientKaiSlashManager.MAX_SLASHES * SLOT];
                 int activeCount = 0;
+                int maxActiveSlashes = AmbientKaiSlashManager.getActiveSlashCount();
+
+                Vec3d ambientCenter = AmbientKaiSlashManager.domainCenter;
 
                 for (AmbientKaiSlashManager.AmbientSlash slash : slashes) {
+                    if (activeCount >= maxActiveSlashes) break;
+
                     float localT = slash.getLocalT();  // 사이클 완료 시 자동 regenerate
                     float fade   = slash.getFade(localT);
                     if (fade < 0.002f) continue;
 
                     // 슬래시 끝점 (full halfLen — kai는 길이 고정, 스윕으로 애니메이션)
                     Vec3d ep1 = new Vec3d(
-                        AmbientKaiSlashManager.sphereX + slash.sx + slash.dx * slash.halfLen,
-                        AmbientKaiSlashManager.sphereY + slash.sy + slash.dy * slash.halfLen,
-                        AmbientKaiSlashManager.sphereZ + slash.sz + slash.dz * slash.halfLen);
+                        ambientCenter.x + slash.sx + slash.dx * slash.halfLen,
+                        ambientCenter.y + slash.sy + slash.dy * slash.halfLen,
+                        ambientCenter.z + slash.sz + slash.dz * slash.halfLen);
                     Vec3d ep2 = new Vec3d(
-                        AmbientKaiSlashManager.sphereX + slash.sx - slash.dx * slash.halfLen,
-                        AmbientKaiSlashManager.sphereY + slash.sy - slash.dy * slash.halfLen,
-                        AmbientKaiSlashManager.sphereZ + slash.sz - slash.dz * slash.halfLen);
+                        ambientCenter.x + slash.sx - slash.dx * slash.halfLen,
+                        ambientCenter.y + slash.sy - slash.dy * slash.halfLen,
+                        ambientCenter.z + slash.sz - slash.dz * slash.halfLen);
 
                     Vec3d sp1 = WorldToScreenUtil.worldToScreen(ep1, camera, projectionMatrix);
                     Vec3d sp2 = WorldToScreenUtil.worldToScreen(ep2, camera, projectionMatrix);
@@ -266,19 +277,29 @@ public class GameRendererMixin {
                     float headT = slash.getHeadT(localT);
                     float tailT = slash.getTailT(localT);
 
+                    // 거리 기반 두께 스케일 (기준 거리 3블록, 가까울수록 굵게)
+                    float dist      = (float)((sp1.z + sp2.z) * 0.5);
+                    float distScale = 3.0f / Math.max(3.0f, dist);
+
+                    // NDC depth (depth buffer 비교용)
+                    float depth1 = WorldToScreenUtil.worldToDepth(ep1, camera, projectionMatrix);
+                    float depth2 = WorldToScreenUtil.worldToDepth(ep2, camera, projectionMatrix);
+
                     // WorldToScreenUtil: y=0 위쪽 → 셰이더 texCoord: y=0 아래쪽
                     int base = activeCount * SLOT;
-                    slashData[base    ] = (float) sp1.x;
-                    slashData[base + 1] = 1.0f - (float) sp1.y;
-                    slashData[base + 2] = (float) sp2.x;
-                    slashData[base + 3] = 1.0f - (float) sp2.y;
-                    slashData[base + 4] = headT;
-                    slashData[base + 5] = tailT;
-                    slashData[base + 6] = fade;
-                    // base+7 = 0 (padding, array is zero-initialized)
+                    slashData[base     ] = (float) sp1.x;
+                    slashData[base +  1] = 1.0f - (float) sp1.y;
+                    slashData[base +  2] = (float) sp2.x;
+                    slashData[base +  3] = 1.0f - (float) sp2.y;
+                    slashData[base +  4] = headT;
+                    slashData[base +  5] = tailT;
+                    slashData[base +  6] = fade;
+                    slashData[base +  7] = distScale;
+                    slashData[base +  8] = depth1;
+                    slashData[base +  9] = depth2;
+                    // base+10, 11 = 0 (padding, array is zero-initialized)
 
                     activeCount++;
-                    if (activeCount >= AmbientKaiSlashManager.MAX_SLASHES) break;
                 }
 
                 updateAmbientKaiUniforms(ambientProcessor, activeCount, slashData);
@@ -417,15 +438,18 @@ public class GameRendererMixin {
      *   float CoreHalfWidth →  4 bytes
      *   float BloomWidth    →  4 bytes
      *   float Alpha         →  4 bytes
-     *   float _pad          →  4 bytes
-     *   Total               = 32 bytes
+     *   float Time          →  4 bytes
+     *   float Depth1        →  4 bytes
+     *   float Depth2        →  4 bytes
+     *   Total               = 40 bytes
      */
     @SuppressWarnings("unchecked")
     private void updateKaiSlashUniforms(PostEffectProcessor processor,
                                          float p1x, float p1y,
                                          float p2x, float p2y,
                                          float coreHalfWidth, float bloomWidth,
-                                         float alpha, float time) {
+                                         float alpha, float time,
+                                         float depth1, float depth2) {
         try {
             java.lang.reflect.Field passesField = null;
             for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
@@ -449,10 +473,10 @@ public class GameRendererMixin {
             com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("KaiSlashConfig");
             if (buf == null) return;
 
-            if ((buf.usage() & 8) == 0 || buf.size() < 32) {
+            if ((buf.usage() & 8) == 0 || buf.size() < 40) {
                 buf.close();
                 com.mojang.blaze3d.buffers.GpuBuffer newBuf =
-                    RenderSystem.getDevice().createBuffer(() -> "JJK KaiSlashConfig", 8 | 128, 32);
+                    RenderSystem.getDevice().createBuffer(() -> "JJK KaiSlashConfig", 8 | 128, 40);
                 ubs.put("KaiSlashConfig", newBuf);
                 buf = newBuf;
             }
@@ -460,13 +484,15 @@ public class GameRendererMixin {
             org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush();
             try {
                 com.mojang.blaze3d.buffers.Std140Builder b =
-                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 32);
+                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 40);
                 b.putVec2(p1x, p1y);
                 b.putVec2(p2x, p2y);
                 b.putFloat(coreHalfWidth);
                 b.putFloat(bloomWidth);
                 b.putFloat(alpha);
                 b.putFloat(time);
+                b.putFloat(depth1);
+                b.putFloat(depth2);
                 RenderSystem.getDevice().createCommandEncoder()
                     .writeToBuffer(buf.slice(), b.get());
             } finally {
@@ -486,12 +512,13 @@ public class GameRendererMixin {
      *   float Time      →  4 bytes
      *   float SkewAngle →  4 bytes
      *   float DistScale →  4 bytes
-     *   Total           = 24 bytes
+     *   float Depth     →  4 bytes
+     *   Total           = 28 bytes
      */
     @SuppressWarnings("unchecked")
     private void updateHachiSlashUniforms(PostEffectProcessor processor,
                                           float cx, float cy, float angle, float time,
-                                          float skewAngle, float distScale) {
+                                          float skewAngle, float distScale, float depth) {
         try {
             java.lang.reflect.Field passesField = null;
             for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
@@ -515,10 +542,10 @@ public class GameRendererMixin {
             com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("HachiSlashConfig");
             if (buf == null) return;
 
-            if ((buf.usage() & 8) == 0 || buf.size() < 24) {
+            if ((buf.usage() & 8) == 0 || buf.size() < 28) {
                 buf.close();
                 com.mojang.blaze3d.buffers.GpuBuffer newBuf =
-                    RenderSystem.getDevice().createBuffer(() -> "JJK HachiSlashConfig", 8 | 128, 24);
+                    RenderSystem.getDevice().createBuffer(() -> "JJK HachiSlashConfig", 8 | 128, 28);
                 ubs.put("HachiSlashConfig", newBuf);
                 buf = newBuf;
             }
@@ -526,12 +553,13 @@ public class GameRendererMixin {
             org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush();
             try {
                 com.mojang.blaze3d.buffers.Std140Builder b =
-                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 24);
+                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 28);
                 b.putVec2(cx, cy);
                 b.putFloat(angle);
                 b.putFloat(time);
                 b.putFloat(skewAngle);
                 b.putFloat(distScale);
+                b.putFloat(depth);
                 RenderSystem.getDevice().createCommandEncoder()
                     .writeToBuffer(buf.slice(), b.get());
             } finally {
@@ -618,17 +646,18 @@ public class GameRendererMixin {
      * Updates the AmbientKaiConfig uniform buffer.
      *
      * std140 layout:
-     *   float SlashCount    →  4 bytes
-     *   float CoreHalfWidth →  4 bytes
-     *   float BloomWidth    →  4 bytes
-     *   float _pad          →  4 bytes
-     *   vec4  Slashes[64]   → 64 × 16 = 1024 bytes
-     *   Total               = 1040 bytes
+     *   float SlashCount    →    4 bytes
+     *   float CoreHalfWidth →    4 bytes
+     *   float BloomWidth    →    4 bytes
+     *   float _pad          →    4 bytes
+     *   vec4  Slashes[384]  → 6144 bytes  (128슬래시 × 3 vec4)
+     *   Total               = 6160 bytes
      *
-     * slashData: float[] of length slashCount × 8
-     *   [i*8+0..3] = p1x, p1y, p2x, p2y  (screen texCoord UV)
-     *   [i*8+4]    = fade
-     *   [i*8+5..7] = 0 (padding)
+     * slashData: float[] of length slashCount × 12
+     *   [i*12+0..3]  = p1x, p1y, p2x, p2y  (screen texCoord UV)
+     *   [i*12+4..7]  = headT, tailT, fade, distScale
+     *   [i*12+8..9]  = depth1, depth2  (NDC depth [0,1])
+     *   [i*12+10..11]= 0, 0 (padding)
      */
     @SuppressWarnings("unchecked")
     private void updateAmbientKaiUniforms(PostEffectProcessor processor,
@@ -656,8 +685,8 @@ public class GameRendererMixin {
             com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("AmbientKaiConfig");
             if (buf == null) return;
 
-            // std140: 16(header) + 256×vec4(4096) = 4112 bytes  (128슬래시 × 2 vec4)
-            final int REQUIRED = 4112;
+            // std140: 16(header) + 384×vec4(6144) = 6160 bytes  (128슬래시 × 3 vec4)
+            final int REQUIRED = 6160;
             if ((buf.usage() & 8) == 0 || buf.size() < REQUIRED) {
                 buf.close();
                 com.mojang.blaze3d.buffers.GpuBuffer newBuf =
@@ -677,17 +706,21 @@ public class GameRendererMixin {
                 b.putFloat(AmbientKaiSlashManager.BLOOM_WIDTH);
                 b.putFloat(0.0f);
 
-                // Slashes array: 256 vec4 (2 per slash × 128 슬래시)
+                // Slashes array: 384 vec4 (3 per slash × 128 슬래시)
                 int maxSlashes = AmbientKaiSlashManager.MAX_SLASHES;
                 for (int i = 0; i < maxSlashes; i++) {
                     if (i < slashCount) {
-                        int base = i * 8;
+                        int base = i * 12;
                         // vec4: p1x, p1y, p2x, p2y
-                        b.putVec4(slashData[base], slashData[base + 1],
+                        b.putVec4(slashData[base],     slashData[base + 1],
                                   slashData[base + 2], slashData[base + 3]);
-                        // vec4: headT, tailT, fade, 0
-                        b.putVec4(slashData[base + 4], slashData[base + 5], slashData[base + 6], 0f);
+                        // vec4: headT, tailT, fade, distScale
+                        b.putVec4(slashData[base + 4], slashData[base + 5],
+                                  slashData[base + 6], slashData[base + 7]);
+                        // vec4: depth1, depth2, 0, 0
+                        b.putVec4(slashData[base + 8], slashData[base + 9], 0f, 0f);
                     } else {
+                        b.putVec4(0f, 0f, 0f, 0f);
                         b.putVec4(0f, 0f, 0f, 0f);
                         b.putVec4(0f, 0f, 0f, 0f);
                     }

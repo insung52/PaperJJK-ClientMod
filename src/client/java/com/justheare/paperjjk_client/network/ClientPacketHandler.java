@@ -106,33 +106,53 @@ public class ClientPacketHandler {
 
         switch (action) {
             case PacketIds.DomainVisualAction.START -> {
+                // v2 format: [uuidMost(8)][uuidLeast(8)][domainType(4)][cx(8)][cy(8)][cz(8)][maxRadius(4f)][isOpen(1b)]
+                long uuidMost = buf.readLong();
+                long uuidLeast = buf.readLong();
+                java.util.UUID domainId = new java.util.UUID(uuidMost, uuidLeast);
                 int domainType = buf.readInt();
                 double centerX = buf.readDouble();
                 double centerY = buf.readDouble();
                 double centerZ = buf.readDouble();
-                int maxRadius = buf.readInt();
-                int colorRGB = buf.readInt();
-                float expansionSpeed = buf.readFloat();
-                long uuidMost = buf.readLong();
-                long uuidLeast = buf.readLong();
-                java.util.UUID domainId = new java.util.UUID(uuidMost, uuidLeast);
+                float maxRadius = buf.readFloat();
+                boolean isOpen = buf.readBoolean();
 
                 client.execute(() -> {
-                    ClientGameData.ActiveDomain domain = new ClientGameData.ActiveDomain();
-                    domain.domainId = domainId;
-                    domain.center = new net.minecraft.util.math.Vec3d(centerX, centerY, centerZ);
-                    domain.currentRadius = 0.0f;
-                    domain.maxRadius = maxRadius;
-                    domain.expansionSpeed = expansionSpeed;  // Initial speed from server
-                    domain.color = colorRGB;
-                    domain.domainType = domainType;
-                    domain.lastSyncTime = System.currentTimeMillis();
-                    domain.serverRadius = 0.0f;  // Server starts at 0
-                    domain.isExpanding = true;
+                    ClientGameData.ActiveDomain existing = ClientGameData.getDomain(domainId);
+                    if (existing == null) {
+                        // Fresh start
+                        ClientGameData.ActiveDomain domain = new ClientGameData.ActiveDomain();
+                        domain.domainId = domainId;
+                        domain.center = new net.minecraft.util.math.Vec3d(centerX, centerY, centerZ);
+                        domain.currentRadius = 0.0f;
+                        domain.maxRadius = maxRadius;
+                        domain.expansionSpeed = 0f;
+                        domain.color = 0;
+                        domain.domainType = domainType;
+                        domain.lastSyncTime = System.currentTimeMillis();
+                        domain.serverRadius = 0.0f;
+                        domain.isExpanding = true;
+                        ClientGameData.addDomain(domainId, domain);
 
-                    ClientGameData.addDomain(domainId, domain);
-                    LOGGER.info("[Domain Visual] START: id={}, center=({},{},{}), maxRadius={}, speed={}/s",
-                        domainId, centerX, centerY, centerZ, maxRadius, expansionSpeed);
+                        // MIZUSHI 결없 영역전개만 ambient slash 효과 활성화
+                        if (domainType == PacketIds.DomainType.MIZUSHI) {
+                            net.minecraft.util.math.Vec3d center =
+                                new net.minecraft.util.math.Vec3d(centerX, centerY, centerZ);
+                            com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
+                                .setDomain(domainId, center, maxRadius);
+                            LOGGER.info("[Domain Visual] MIZUSHI START → ambient slash activated, radius={}", maxRadius);
+                        }
+
+                        LOGGER.info("[Domain Visual] START: id={}, type={}, center=({},{},{}), maxRadius={}, isOpen={}",
+                            domainId, domainType, centerX, centerY, centerZ, maxRadius, isOpen);
+                    } else {
+                        // Re-broadcast every 5 ticks acts as sync
+                        existing.maxRadius = maxRadius;
+                        existing.lastSyncTime = System.currentTimeMillis();
+                        com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
+                            .syncDomainRadius(domainId, maxRadius);
+                        LOGGER.debug("[Domain Visual] SYNC (via START): id={}, maxRadius={}", domainId, maxRadius);
+                    }
                 });
             }
 
@@ -144,6 +164,9 @@ public class ClientPacketHandler {
 
                 client.execute(() -> {
                     ClientGameData.syncDomain(domainId, serverRadius);
+                    // MIZUSHI 도메인 반경 동기화
+                    com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
+                        .syncDomainRadius(domainId, serverRadius);
                     LOGGER.debug("[Domain Visual] SYNC: id={}, radius={}", domainId, serverRadius);
                 });
             }
@@ -155,19 +178,10 @@ public class ClientPacketHandler {
 
                 client.execute(() -> {
                     ClientGameData.removeDomain(domainId);
+                    // MIZUSHI 도메인 종료 시 ambient slash 비활성화
+                    com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
+                        .clearDomain(domainId);
                     LOGGER.info("[Domain Visual] END: id={}", domainId);
-                });
-            }
-
-            case PacketIds.DomainVisualAction.COMPLETE -> {
-                long uuidMost = buf.readLong();
-                long uuidLeast = buf.readLong();
-                java.util.UUID domainId = new java.util.UUID(uuidMost, uuidLeast);
-                float finalRadius = buf.readFloat();
-
-                client.execute(() -> {
-                    ClientGameData.completeDomain(domainId, finalRadius);
-                    LOGGER.info("[Domain Visual] COMPLETE: id={}, finalRadius={}", domainId, finalRadius);
                 });
             }
 

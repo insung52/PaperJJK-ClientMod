@@ -123,10 +123,9 @@ public class PacketIds {
      * Domain Visual Action Type (action field in DOMAIN_VISUAL packet)
      */
     public static class DomainVisualAction {
-        public static final byte START = 0x01;       // Start expansion animation
-        public static final byte SYNC = 0x02;        // Sync current radius (every 3 seconds)
-        public static final byte END = 0x03;         // Destroy domain
-        public static final byte COMPLETE = 0x04;    // Expansion complete - final radius
+        public static final byte START = 0x01;       // Start expansion animation (also rebroadcast as sync every 5 ticks)
+        public static final byte SYNC = 0x02;        // Sync current radius (unused by v2, kept for compatibility)
+        public static final byte END = 0x05;         // Destroy domain (v2: 0x05)
     }
 
     /**

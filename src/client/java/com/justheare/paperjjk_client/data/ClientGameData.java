@@ -168,6 +168,13 @@ public class ClientGameData {
     // === Domain Management ===
 
     /**
+     * Get existing domain by ID, or null if not present.
+     */
+    public static ActiveDomain getDomain(UUID id) {
+        return activeDomains.get(id);
+    }
+
+    /**
      * Add new domain for rendering
      */
     public static void addDomain(UUID id, ActiveDomain domain) {
