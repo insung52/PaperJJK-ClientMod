@@ -48,6 +48,9 @@ public class GameRendererMixin {
     private static final Identifier AMBIENT_KAI_SLASH_EFFECT_ID =
         Identifier.of("paperjjk-client", "ambient_kai_slash");
 
+    private static final Identifier MIZUSHI_DUST_STORM_EFFECT_ID =
+        Identifier.of("paperjjk-client", "mizushi_dust_storm");
+
     /**
      * Apply refraction post-processing BEFORE the HUD renders.
      * This ensures the crosshair, health bar, hotbar etc. are NOT distorted.
@@ -241,6 +244,43 @@ public class GameRendererMixin {
             }
         }
         if (AmbientKaiSlashManager.isActive()) {
+            // 카메라 위치를 슬래시 배치 계산에 활용하도록 매 프레임 업데이트
+            AmbientKaiSlashManager.cameraPos = ((CameraAccessor) camera).getPos();
+
+            // ── 1. Mizushi Dust Storm — 먼저 렌더 (배경 fog/왜곡) ─────────────────
+            {
+                Matrix4f dustViewMatrix = new Matrix4f()
+                    .rotation(camera.getRotation().conjugate(new Quaternionf()));
+                Matrix4f dustInvViewProj = projectionMatrix
+                    .mul(dustViewMatrix, new Matrix4f())
+                    .invert(new Matrix4f());
+
+                Vec3d camPos3 = ((CameraAccessor) camera).getPos();
+                Vec3d domCenter3 = AmbientKaiSlashManager.domainCenter;
+                float dcRelX = (float)(domCenter3.x - camPos3.x);
+                float dcRelY = (float)(domCenter3.y - camPos3.y);
+                float dcRelZ = (float)(domCenter3.z - camPos3.z);
+                float domRadius3 = AmbientKaiSlashManager.domainRadius;
+                float stormTime  = (float)(System.currentTimeMillis() % 100000L) / 1000.0f;
+
+                PostEffectProcessor dustProcessor;
+                try {
+                    dustProcessor = client.getShaderLoader().loadPostEffect(
+                        MIZUSHI_DUST_STORM_EFFECT_ID,
+                        Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN)
+                    );
+                } catch (Exception e) {
+                    System.err.println("[JJKMixin] Failed to load mizushi_dust_storm post effect: " + e.getMessage());
+                    dustProcessor = null;
+                }
+                if (dustProcessor != null) {
+                    updateDustStormUniforms(dustProcessor, dustInvViewProj,
+                        dcRelX, dcRelY, dcRelZ, domRadius3, stormTime);
+                    dustProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
+                }
+            }
+
+            // ── 2. Ambient Kai Slash — fog 위에 덧씌워 렌더 ───────────────────────
             PostEffectProcessor ambientProcessor;
             try {
                 ambientProcessor = client.getShaderLoader().loadPostEffect(
@@ -308,7 +348,8 @@ public class GameRendererMixin {
                     slashData[base +  7] = distScale;
                     slashData[base +  8] = depth1;
                     slashData[base +  9] = depth2;
-                    // base+10, 11 = 0 (padding, array is zero-initialized)
+                    slashData[base + 10] = (float) sp1.z; // camDist1 (블록 단위)
+                    slashData[base + 11] = (float) sp2.z; // camDist2
 
                     activeCount++;
                 }
@@ -578,6 +619,79 @@ public class GameRendererMixin {
             }
         } catch (Exception e) {
             System.err.println("[JJKMixin] updateHachiSlashUniforms failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Updates the DustStormConfig uniform buffer.
+     *
+     * std140 layout:
+     *   vec4 InvViewProjC0..C3 → 4 × 16 = 64 bytes
+     *   vec4 DomainCenter      → 16 bytes (.w = 0)
+     *   float DomainRadius     →  4 bytes
+     *   float Time             →  4 bytes
+     *   float _pad0, _pad1     →  8 bytes
+     *   Total                  = 96 bytes
+     */
+    @SuppressWarnings("unchecked")
+    private void updateDustStormUniforms(PostEffectProcessor processor,
+                                          Matrix4f invViewProj,
+                                          float domCX, float domCY, float domCZ,
+                                          float domRadius, float time) {
+        try {
+            java.lang.reflect.Field passesField = null;
+            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
+                if (java.util.List.class.isAssignableFrom(f.getType())) { passesField = f; break; }
+            }
+            if (passesField == null) return;
+            passesField.setAccessible(true);
+            List<?> passes = (List<?>) passesField.get(processor);
+            if (passes.isEmpty()) return;
+            Object firstPass = passes.get(0);
+
+            java.lang.reflect.Field ubField = null;
+            for (java.lang.reflect.Field f : firstPass.getClass().getDeclaredFields()) {
+                if (java.util.Map.class.isAssignableFrom(f.getType())) { ubField = f; break; }
+            }
+            if (ubField == null) return;
+            ubField.setAccessible(true);
+            java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> ubs =
+                (java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>) ubField.get(firstPass);
+
+            com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("DustStormConfig");
+            if (buf == null) return;
+
+            if ((buf.usage() & 8) == 0 || buf.size() < 96) {
+                buf.close();
+                com.mojang.blaze3d.buffers.GpuBuffer newBuf =
+                    RenderSystem.getDevice().createBuffer(() -> "JJK DustStormConfig", 8 | 128, 96);
+                ubs.put("DustStormConfig", newBuf);
+                buf = newBuf;
+            }
+
+            org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush();
+            try {
+                com.mojang.blaze3d.buffers.Std140Builder b =
+                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 96);
+                // InvViewProj columns
+                b.putVec4(invViewProj.m00(), invViewProj.m01(), invViewProj.m02(), invViewProj.m03());
+                b.putVec4(invViewProj.m10(), invViewProj.m11(), invViewProj.m12(), invViewProj.m13());
+                b.putVec4(invViewProj.m20(), invViewProj.m21(), invViewProj.m22(), invViewProj.m23());
+                b.putVec4(invViewProj.m30(), invViewProj.m31(), invViewProj.m32(), invViewProj.m33());
+                // DomainCenter (camera-relative)
+                b.putVec4(domCX, domCY, domCZ, 0.0f);
+                // DomainRadius, Time, padding
+                b.putFloat(domRadius);
+                b.putFloat(time);
+                b.putFloat(0.0f);
+                b.putFloat(0.0f);
+                RenderSystem.getDevice().createCommandEncoder()
+                    .writeToBuffer(buf.slice(), b.get());
+            } finally {
+                stack.pop();
+            }
+        } catch (Exception e) {
+            System.err.println("[JJKMixin] updateDustStormUniforms failed: " + e.getMessage());
         }
     }
 

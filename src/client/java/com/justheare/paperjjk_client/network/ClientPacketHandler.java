@@ -148,6 +148,10 @@ public class ClientPacketHandler {
                     } else {
                         // Re-broadcast every 5 ticks acts as sync
                         existing.syncFromServer(maxRadius);
+                        if (existing.domainType == PacketIds.DomainType.MIZUSHI) {
+                            com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
+                                .syncDomainRadius(domainId, maxRadius);
+                        }
                         LOGGER.debug("[Domain Visual] SYNC (via START): id={}, maxRadius={}", domainId, maxRadius);
                     }
                 });

@@ -53,6 +53,9 @@ public class DebugCommand {
                 )
                 .then(literal("ambientslash")
                     .executes(DebugCommand::toggleAmbientSlash)
+                    .then(argument("radius", FloatArgumentType.floatArg(1f, 300f))
+                        .executes(DebugCommand::setAmbientSlashRadius)
+                    )
                 )
         );
     }
@@ -237,6 +240,23 @@ public class DebugCommand {
         boolean active = com.justheare.paperjjk_client.shader.AmbientKaiSlashManager.isActive();
         context.getSource().sendFeedback(
             Text.literal("§d[PaperJJK] §f결없영 참격 효과 §" + (active ? "aON" : "cOFF"))
+        );
+        return 1;
+    }
+
+    private static int setAmbientSlashRadius(CommandContext<FabricClientCommandSource> context) {
+        net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+        if (client.player == null) {
+            context.getSource().sendFeedback(Text.literal("§c[Error] No player found"));
+            return 0;
+        }
+        float radius = FloatArgumentType.getFloat(context, "radius");
+        Vec3d center = new Vec3d(client.player.getX(), client.player.getY(), client.player.getZ());
+        java.util.UUID debugId = java.util.UUID.fromString("00000000-0000-0000-0000-000000000001");
+        com.justheare.paperjjk_client.shader.AmbientKaiSlashManager.setDomain(debugId, center, radius);
+        context.getSource().sendFeedback(
+            Text.literal("§d[PaperJJK] §f결없영 반경 §a" + String.format("%.1f", radius) +
+                "§f블록, 중심 §e" + String.format("(%.1f, %.1f, %.1f)", center.x, center.y, center.z))
         );
         return 1;
     }

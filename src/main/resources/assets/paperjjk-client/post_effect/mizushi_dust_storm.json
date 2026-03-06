@@ -1,0 +1,52 @@
+{
+    "targets": {
+        "swap": {}
+    },
+    "passes": [
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "paperjjk-client:post/mizushi_dust_storm",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "minecraft:main"
+                },
+                {
+                    "sampler_name": "Depth",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
+                }
+            ],
+            "output": "swap",
+            "uniforms": {
+                "DustStormConfig": [
+                    { "name": "InvViewProjC0", "type": "vec4", "value": [1.0, 0.0, 0.0, 0.0] },
+                    { "name": "InvViewProjC1", "type": "vec4", "value": [0.0, 1.0, 0.0, 0.0] },
+                    { "name": "InvViewProjC2", "type": "vec4", "value": [0.0, 0.0, 1.0, 0.0] },
+                    { "name": "InvViewProjC3", "type": "vec4", "value": [0.0, 0.0, 0.0, 1.0] },
+                    { "name": "DomainCenter",  "type": "vec4", "value": [0.0, 0.0, 0.0, 0.0] },
+                    { "name": "DomainRadius",  "type": "float", "value": 0.0 },
+                    { "name": "Time",          "type": "float", "value": 0.0 },
+                    { "name": "_pad0",         "type": "float", "value": 0.0 },
+                    { "name": "_pad1",         "type": "float", "value": 0.0 }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "minecraft:post/blit",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "swap"
+                }
+            ],
+            "uniforms": {
+                "BlitConfig": [
+                    { "name": "ColorModulate", "type": "vec4", "value": [1.0, 1.0, 1.0, 1.0] }
+                ]
+            },
+            "output": "minecraft:main"
+        }
+    ]
+}
