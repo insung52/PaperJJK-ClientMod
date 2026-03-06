@@ -3,7 +3,7 @@
 uniform sampler2D InSampler;
 uniform sampler2D DepthSampler;
 
-// std140: float*4 header(16) + vec4[384] array(6144) = 6160 bytes
+// std140: float*4 header(16) + vec4[3840] array(61440) = 61456 bytes
 // Slashes[i*3]   = (p1x, p1y, p2x, p2y)       — texCoord UV (y=0 바닥)
 // Slashes[i*3+1] = (headT, tailT, fade, distScale)
 // Slashes[i*3+2] = (depth1, depth2, 0, 0)      — NDC depth [0,1]
@@ -12,7 +12,7 @@ layout(std140) uniform AmbientKaiConfig {
     float CoreHalfWidth;
     float BloomWidth;
     float _pad;
-    vec4  Slashes[384];  // 128슬래시 × 3 vec4
+    vec4  Slashes[3840]; // 1280슬래시 × 3 vec4
 };
 
 in vec2 texCoord;

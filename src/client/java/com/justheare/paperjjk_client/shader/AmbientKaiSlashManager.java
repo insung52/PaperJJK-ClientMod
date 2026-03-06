@@ -137,6 +137,8 @@ public class AmbientKaiSlashManager {
 
     public static boolean isActive() { return active; }
 
+    public static UUID getActiveDomainId() { return activeDomainId; }
+
     public static void toggle() {
         active = !active;
         if (active) startMs = System.currentTimeMillis();

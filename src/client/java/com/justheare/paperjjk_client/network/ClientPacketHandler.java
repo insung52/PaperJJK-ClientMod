@@ -139,18 +139,15 @@ public class ClientPacketHandler {
                             net.minecraft.util.math.Vec3d center =
                                 new net.minecraft.util.math.Vec3d(centerX, centerY, centerZ);
                             com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
-                                .setDomain(domainId, center, maxRadius);
-                            LOGGER.info("[Domain Visual] MIZUSHI START → ambient slash activated, radius={}", maxRadius);
+                                .setDomain(domainId, center, 0f);
+                            LOGGER.info("[Domain Visual] MIZUSHI START → ambient slash activated");
                         }
 
                         LOGGER.info("[Domain Visual] START: id={}, type={}, center=({},{},{}), maxRadius={}, isOpen={}",
                             domainId, domainType, centerX, centerY, centerZ, maxRadius, isOpen);
                     } else {
                         // Re-broadcast every 5 ticks acts as sync
-                        existing.maxRadius = maxRadius;
-                        existing.lastSyncTime = System.currentTimeMillis();
-                        com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
-                            .syncDomainRadius(domainId, maxRadius);
+                        existing.syncFromServer(maxRadius);
                         LOGGER.debug("[Domain Visual] SYNC (via START): id={}, maxRadius={}", domainId, maxRadius);
                     }
                 });

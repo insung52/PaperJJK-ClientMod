@@ -229,6 +229,17 @@ public class GameRendererMixin {
         }
 
         // ── Ambient Kai Slash (결없영 배경 참격) — screen-space 2D, 단일 pass ──
+        // ActiveDomain.currentRadius (서버 반경 보간값)를 매 프레임 동기화
+        {
+            java.util.UUID ambientId = AmbientKaiSlashManager.getActiveDomainId();
+            if (ambientId != null) {
+                com.justheare.paperjjk_client.data.ClientGameData.ActiveDomain ambientDomain =
+                    com.justheare.paperjjk_client.data.ClientGameData.getDomain(ambientId);
+                if (ambientDomain != null) {
+                    AmbientKaiSlashManager.syncDomainRadius(ambientId, ambientDomain.currentRadius);
+                }
+            }
+        }
         if (AmbientKaiSlashManager.isActive()) {
             PostEffectProcessor ambientProcessor;
             try {
@@ -650,8 +661,8 @@ public class GameRendererMixin {
      *   float CoreHalfWidth →    4 bytes
      *   float BloomWidth    →    4 bytes
      *   float _pad          →    4 bytes
-     *   vec4  Slashes[384]  → 6144 bytes  (128슬래시 × 3 vec4)
-     *   Total               = 6160 bytes
+     *   vec4  Slashes[N×3]  → N×48 bytes  (MAX_SLASHES슬래시 × 3 vec4)
+     *   Total               = 16 + MAX_SLASHES×48 bytes
      *
      * slashData: float[] of length slashCount × 12
      *   [i*12+0..3]  = p1x, p1y, p2x, p2y  (screen texCoord UV)
@@ -685,52 +696,49 @@ public class GameRendererMixin {
             com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("AmbientKaiConfig");
             if (buf == null) return;
 
-            // std140: 16(header) + 384×vec4(6144) = 6160 bytes  (128슬래시 × 3 vec4)
-            final int REQUIRED = 6160;
+            // std140: 16(header) + MAX_SLASHES×3×vec4 bytes
+            final int REQUIRED = 16 + AmbientKaiSlashManager.MAX_SLASHES * 3 * 16;
             if ((buf.usage() & 8) == 0 || buf.size() < REQUIRED) {
-                buf.close();
+                // 새 버퍼 생성 후 맵 전체를 교체 (원본 맵이 unmodifiable일 경우 대응)
                 com.mojang.blaze3d.buffers.GpuBuffer newBuf =
                     RenderSystem.getDevice().createBuffer(() -> "JJK AmbientKaiConfig", 8 | 128, REQUIRED);
-                ubs.put("AmbientKaiConfig", newBuf);
+                java.util.HashMap<String, com.mojang.blaze3d.buffers.GpuBuffer> newMap = new java.util.HashMap<>(ubs);
+                newMap.put("AmbientKaiConfig", newBuf);
+                ubField.set(firstPass, newMap);
+                buf.close();
                 buf = newBuf;
             }
 
-            org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush();
-            try {
-                com.mojang.blaze3d.buffers.Std140Builder b =
-                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, REQUIRED);
+            // MemoryStack 대신 direct ByteBuffer 사용
+            java.nio.ByteBuffer rawBuf = java.nio.ByteBuffer
+                .allocateDirect(REQUIRED)
+                .order(java.nio.ByteOrder.nativeOrder());
 
-                // Header (16 bytes)
-                b.putFloat((float) slashCount);
-                b.putFloat(AmbientKaiSlashManager.CORE_HALF_WIDTH);
-                b.putFloat(AmbientKaiSlashManager.BLOOM_WIDTH);
-                b.putFloat(0.0f);
+            // Header (16 bytes)
+            rawBuf.putFloat((float) slashCount);
+            rawBuf.putFloat(AmbientKaiSlashManager.CORE_HALF_WIDTH);
+            rawBuf.putFloat(AmbientKaiSlashManager.BLOOM_WIDTH);
+            rawBuf.putFloat(0.0f);
 
-                // Slashes array: 384 vec4 (3 per slash × 128 슬래시)
-                int maxSlashes = AmbientKaiSlashManager.MAX_SLASHES;
-                for (int i = 0; i < maxSlashes; i++) {
-                    if (i < slashCount) {
-                        int base = i * 12;
-                        // vec4: p1x, p1y, p2x, p2y
-                        b.putVec4(slashData[base],     slashData[base + 1],
-                                  slashData[base + 2], slashData[base + 3]);
-                        // vec4: headT, tailT, fade, distScale
-                        b.putVec4(slashData[base + 4], slashData[base + 5],
-                                  slashData[base + 6], slashData[base + 7]);
-                        // vec4: depth1, depth2, 0, 0
-                        b.putVec4(slashData[base + 8], slashData[base + 9], 0f, 0f);
-                    } else {
-                        b.putVec4(0f, 0f, 0f, 0f);
-                        b.putVec4(0f, 0f, 0f, 0f);
-                        b.putVec4(0f, 0f, 0f, 0f);
-                    }
+            // Slashes array: 384 vec4 (3 per slash × 128 슬래시)
+            int maxSlashes = AmbientKaiSlashManager.MAX_SLASHES;
+            for (int i = 0; i < maxSlashes; i++) {
+                if (i < slashCount) {
+                    int base = i * 12;
+                    rawBuf.putFloat(slashData[base    ]); rawBuf.putFloat(slashData[base + 1]);
+                    rawBuf.putFloat(slashData[base + 2]); rawBuf.putFloat(slashData[base + 3]);
+                    rawBuf.putFloat(slashData[base + 4]); rawBuf.putFloat(slashData[base + 5]);
+                    rawBuf.putFloat(slashData[base + 6]); rawBuf.putFloat(slashData[base + 7]);
+                    rawBuf.putFloat(slashData[base + 8]); rawBuf.putFloat(slashData[base + 9]);
+                    rawBuf.putFloat(0f); rawBuf.putFloat(0f);
+                } else {
+                    for (int j = 0; j < 12; j++) rawBuf.putFloat(0f);
                 }
-
-                RenderSystem.getDevice().createCommandEncoder()
-                    .writeToBuffer(buf.slice(), b.get());
-            } finally {
-                stack.pop();
             }
+            rawBuf.flip();
+
+            RenderSystem.getDevice().createCommandEncoder()
+                .writeToBuffer(buf.slice(), rawBuf);
         } catch (Exception e) {
             System.err.println("[JJKMixin] updateAmbientKaiUniforms failed: " + e.getMessage());
         }
