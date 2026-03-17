@@ -232,20 +232,12 @@ public class GameRendererMixin {
         }
 
         // ── Ambient Kai Slash (결없영 배경 참격) — screen-space 2D, 단일 pass ──
-        // ActiveDomain.currentRadius (서버 반경 보간값)를 매 프레임 동기화
-        {
-            java.util.UUID ambientId = AmbientKaiSlashManager.getActiveDomainId();
-            if (ambientId != null) {
-                com.justheare.paperjjk_client.data.ClientGameData.ActiveDomain ambientDomain =
-                    com.justheare.paperjjk_client.data.ClientGameData.getDomain(ambientId);
-                if (ambientDomain != null) {
-                    AmbientKaiSlashManager.syncDomainRadius(ambientId, ambientDomain.currentRadius);
-                }
-            }
-        }
         if (AmbientKaiSlashManager.isActive()) {
             // 카메라 위치를 슬래시 배치 계산에 활용하도록 매 프레임 업데이트
             AmbientKaiSlashManager.cameraPos = ((CameraAccessor) camera).getPos();
+            // Dead reckoning: smoothRadius 갱신 (프레임 델타 ms 기준)
+            float ambientDtMs = renderTickCounter.getDynamicDeltaTicks() * 50f;
+            AmbientKaiSlashManager.updateSmoothedRadius(ambientDtMs);
 
             // ── 1. Mizushi Dust Storm — 먼저 렌더 (배경 fog/왜곡) ─────────────────
             {
@@ -260,7 +252,7 @@ public class GameRendererMixin {
                 float dcRelX = (float)(domCenter3.x - camPos3.x);
                 float dcRelY = (float)(domCenter3.y - camPos3.y);
                 float dcRelZ = (float)(domCenter3.z - camPos3.z);
-                float domRadius3 = AmbientKaiSlashManager.domainRadius;
+                float domRadius3 = AmbientKaiSlashManager.smoothRadius;
                 float stormTime  = (float)(System.currentTimeMillis() % 100000L) / 1000.0f;
 
                 PostEffectProcessor dustProcessor;

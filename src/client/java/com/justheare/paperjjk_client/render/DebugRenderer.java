@@ -1,6 +1,5 @@
 package com.justheare.paperjjk_client.render;
 
-import com.justheare.paperjjk_client.data.ClientGameData;
 import com.justheare.paperjjk_client.mixin.client.CameraAccessor;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.MinecraftClient;
@@ -10,7 +9,6 @@ import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 
-import java.util.Collection;
 
 /**
  * Debug renderer for testing basic rendering pipeline.
@@ -68,8 +66,7 @@ public class DebugRenderer {
         Vec3d cameraPos = ((CameraAccessor) camera).getPos();
 
         // Early exit if nothing to render (Tessellator.begin must have vertices before end())
-        Collection<ClientGameData.ActiveDomain> domains = ClientGameData.getAllDomains();
-        boolean hasWork = renderCube || !domains.isEmpty()
+        boolean hasWork = renderCube
             || (renderEffect1 && effect1Position != null)
             || (renderEffect2 && effect2Position != null);
         if (!hasWork) return;
@@ -92,21 +89,6 @@ public class DebugRenderer {
             matrices.push();
             matrices.translate(testPos.x - cameraPos.x, testPos.y - cameraPos.y, testPos.z - cameraPos.z);
             renderSphere(matrices.peek().getPositionMatrix(), buffer, 0.5f, 1.0f, 0.0f, 0.0f, 0.35f);
-            matrices.pop();
-        }
-
-        // Active domains
-        for (ClientGameData.ActiveDomain domain : domains) {
-            matrices.push();
-            matrices.translate(
-                domain.center.x - cameraPos.x,
-                domain.center.y - cameraPos.y,
-                domain.center.z - cameraPos.z
-            );
-            float r = ((domain.color >> 16) & 0xFF) / 255.0f;
-            float g = ((domain.color >> 8) & 0xFF) / 255.0f;
-            float b = (domain.color & 0xFF) / 255.0f;
-            renderSphere(matrices.peek().getPositionMatrix(), buffer, domain.currentRadius, r, g, b, 0.2f);
             matrices.pop();
         }
 

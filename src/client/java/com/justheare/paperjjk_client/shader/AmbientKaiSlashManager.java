@@ -29,8 +29,17 @@ public class AmbientKaiSlashManager {
     private static UUID   activeDomainId = null;
     /** 참격이 생성되는 구의 중심 (월드 좌표). 서버 도메인 중심으로 업데이트됨. */
     public static Vec3d  domainCenter   = new Vec3d(-100.0, 150.0, -50.0);
-    /** 현재 도메인 반경 (블록). 참격 분포 구 반경과 활성 개수 계산에 사용. */
+    /** 서버에서 마지막으로 수신한 반경 (권위값). */
     public static float  domainRadius   = 50.0f;
+    /** 보간된 부드러운 반경. 렌더링에 실제로 사용됨. */
+    public static float  smoothRadius   = 0f;
+
+    // ── Dead Reckoning 상태 ───────────────────────────────────────────────
+    /** EMA 평활된 성장 속도 (blocks/ms). sync마다 순간 속도로 블렌딩. */
+    private static float estimatedVelocity = 0f;
+    /** 마지막 syncDomainRadius() 수신 시각 (ms). */
+    private static long  lastSyncMs        = 0L;
+
     /** 매 프레임 GameRendererMixin에서 갱신되는 카메라 월드 좌표. */
     public static Vec3d  cameraPos      = Vec3d.ZERO;
 
@@ -74,7 +83,7 @@ public class AmbientKaiSlashManager {
             float cy = (float)(cameraPos.y - domainCenter.y);
             float cz = (float)(cameraPos.z - domainCenter.z);
 
-            float domR  = Math.max(1f, domainRadius);
+            float domR  = Math.max(1f, smoothRadius);
             float domR2 = domR * domR;
             // 유효 반경: 도메인이 작으면 도메인 반경, 크면 CAM_RADIUS
             float r  = Math.min(domR, CAM_RADIUS);
@@ -189,19 +198,52 @@ public class AmbientKaiSlashManager {
      * 도메인 중심/반경을 설정하고 ambient slash 효과를 활성화한다.
      */
     public static void setDomain(UUID id, Vec3d center, float radius) {
-        activeDomainId = id;
-        domainCenter   = center;
-        domainRadius   = Math.max(1f, radius);
+        activeDomainId    = id;
+        domainCenter      = center;
+        domainRadius      = Math.max(0f, radius);
+        // radius > 0 이면 이미 전개된 상태 (debug 커맨드 등) → 즉시 표시
+        // radius = 0 이면 서버 sync가 반경을 올려줌
+        smoothRadius      = domainRadius;
+        estimatedVelocity = 0f;
+        // 0L이 아닌 현재 시각으로 초기화 → 첫 sync에서 dt가 올바르게 계산됨
+        lastSyncMs        = System.currentTimeMillis();
         activate();
     }
 
     /**
      * 서버 SYNC 패킷으로 반경 갱신.
+     * 순간 속도를 계산해 EMA(α=0.3)로 estimatedVelocity에 블렌딩.
+     * 첫 sync(cold start)는 EMA 없이 직접 설정 → 즉각 반응.
+     * domainRadius는 천장 역할 — 절대 낮추지 않음.
      */
-    public static void syncDomainRadius(UUID id, float radius) {
-        if (id.equals(activeDomainId)) {
-            domainRadius = Math.max(1f, radius);
+    public static void syncDomainRadius(UUID id, float newRadius) {
+        if (!id.equals(activeDomainId)) return;
+        long now = System.currentTimeMillis();
+        long dt  = now - lastSyncMs;
+        if (dt > 10) {
+            float instantV = (newRadius - domainRadius) / (float) dt;
+            instantV = Math.max(0f, instantV);
+            if (estimatedVelocity < 0.0001f) {
+                // Cold start: EMA 수렴 대기 없이 즉시 설정
+                estimatedVelocity = instantV;
+            } else {
+                estimatedVelocity = estimatedVelocity * 0.7f + instantV * 0.3f;
+            }
         }
+        domainRadius = Math.max(domainRadius, newRadius);
+        lastSyncMs   = now;
+    }
+
+    /**
+     * 매 프레임 호출.
+     * estimatedVelocity로 적분하되 domainRadius(서버 천장)를 절대 초과하지 않는다.
+     * TPS 드랍 → sync 간격 증가 → instantV 감소 → EMA로 velocity 완만 감소 → 자연스러운 감속.
+     */
+    public static void updateSmoothedRadius(float dtMs) {
+        smoothRadius = Math.min(
+            smoothRadius + estimatedVelocity * dtMs,
+            domainRadius
+        );
     }
 
     /**
@@ -209,18 +251,21 @@ public class AmbientKaiSlashManager {
      */
     public static void clearDomain(UUID id) {
         if (id.equals(activeDomainId)) {
-            activeDomainId = null;
+            activeDomainId    = null;
+            smoothRadius      = 0f;
+            domainRadius      = 0f;
+            estimatedVelocity = 0f;
+            lastSyncMs        = 0L;
             deactivate();
         }
     }
 
     /**
-     * 현재 반경에 따른 활성 참격 개수.
+     * 현재 반경에 따른 활성 참격 개수. smoothRadius 기준.
      * count = min(MAX_SLASHES, round(DENSITY_K * radius^1.3))
      */
     public static int getActiveSlashCount() {
-        // 카메라 30m 범위 내 배치이므로 min(domainRadius, CAM_RADIUS) 기준으로 밀도 계산
-        float r = Math.min(Math.max(0f, domainRadius), CAM_RADIUS);
+        float r = Math.min(Math.max(0f, smoothRadius), CAM_RADIUS);
         return Math.min(MAX_SLASHES, Math.max(1, (int)(DENSITY_K * Math.pow(r, 1.3))));
     }
 }
