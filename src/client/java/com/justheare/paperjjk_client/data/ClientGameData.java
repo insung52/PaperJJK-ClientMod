@@ -282,6 +282,7 @@ public class ClientGameData {
         public float expansionSpeed; // blocks per tick (recalculated on sync)
         public int color;
         public int domainType;
+        public boolean isOpen;       // 결없영 여부 (true = ambient slash 등 활성화)
         public long lastSyncTime; // When we last received server update
         public float serverRadius; // Last known server radius
         public boolean isExpanding;

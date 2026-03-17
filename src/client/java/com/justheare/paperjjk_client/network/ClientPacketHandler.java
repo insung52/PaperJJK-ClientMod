@@ -126,6 +126,7 @@ public class ClientPacketHandler {
                         domain.center = new net.minecraft.util.math.Vec3d(centerX, centerY, centerZ);
                         domain.maxRadius = maxRadius;
                         domain.domainType = domainType;
+                        domain.isOpen = isOpen;
                         domain.lastSyncTime = System.currentTimeMillis();
                         domain.color = 0;
                         domain.serverRadius = 0.0f;
@@ -134,13 +135,13 @@ public class ClientPacketHandler {
                         domain.isExpanding = true;
                         ClientGameData.addDomain(domainId, domain);
 
-                        // MIZUSHI 결없 영역전개만 ambient slash 효과 활성화
-                        if (domainType == PacketIds.DomainType.MIZUSHI) {
+                        // MIZUSHI 결없영(isOpen=true)만 ambient slash 효과 활성화
+                        if (domainType == PacketIds.DomainType.MIZUSHI && isOpen) {
                             net.minecraft.util.math.Vec3d center =
                                 new net.minecraft.util.math.Vec3d(centerX, centerY, centerZ);
                             com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
                                 .setDomain(domainId, center, 0f);
-                            LOGGER.info("[Domain Visual] MIZUSHI START → ambient slash activated, radius=0 (will grow via sync)");
+                            LOGGER.info("[Domain Visual] MIZUSHI(결없영) START → ambient slash activated");
                         }
 
                         LOGGER.info("[Domain Visual] START: id={}, type={}, center=({},{},{}), maxRadius={}, isOpen={}",
@@ -165,9 +166,12 @@ public class ClientPacketHandler {
 
                 client.execute(() -> {
                     ClientGameData.syncDomain(domainId, serverRadius);
-                    // MIZUSHI 도메인 반경 동기화
-                    com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
-                        .syncDomainRadius(domainId, serverRadius);
+                    // MIZUSHI 결없영(isOpen=true)만 반경 동기화
+                    ClientGameData.ActiveDomain d = ClientGameData.getDomain(domainId);
+                    if (d != null && d.domainType == PacketIds.DomainType.MIZUSHI && d.isOpen) {
+                        com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
+                            .syncDomainRadius(domainId, serverRadius);
+                    }
                     LOGGER.debug("[Domain Visual] SYNC: id={}, radius={}", domainId, serverRadius);
                 });
             }
