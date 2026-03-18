@@ -143,14 +143,14 @@ void main() {
                 density *= (0.3 + nTex * 0.5 + nEdge * 0.3);
                 density  = clamp(density, 0.0, 1.0);
 
-                // 주변 밝기로 색상 자체를 스케일 — 낮에는 밝게, 밤에는 어둡게
-                // (blend 강도가 아닌 색상 밝기를 조절해야 밤에 글로우 없이 자연스러움)
+                // lightScale: 최솟값 없이 0까지 수렴 → 밤에는 완전 불가시
+                // 0.06~0.22 구간에서 석양/새벽 부드럽게 전환
                 float sceneLum   = dot(result, vec3(0.299, 0.587, 0.114));
-                float lightScale = mix(0.15, 1.0, smoothstep(0.05, 0.45, sceneLum));
+                float lightScale = smoothstep(0.18, 0.40, sceneLum);
 
-                vec3 vaporBase = mix(vec3(0.60, 0.63, 0.70), vec3(0.75, 0.78, 0.85), nTex * 0.5);
-                vec3 vaporCol  = vaporBase * lightScale;
-                result = mix(result, vaporCol, vaporAlpha * density * 0.80);
+                // vaporCol을 밝은 하늘(0.7~0.8)보다 더 밝게 → 구름처럼 sky를 밝히는 효과
+                vec3 vaporCol = mix(vec3(0.82, 0.84, 0.90), vec3(0.95, 0.96, 1.00), nTex * 0.5);
+                result = mix(result, vaporCol, vaporAlpha * density * 0.80 * lightScale);
             }
         }
     }
