@@ -120,9 +120,9 @@ void main() {
             if (insideLen > 0.01) {
                 vec3  samplePt = rd * (tEnter + insideLen * 0.5);
 
-                // 노이즈 경계 변위 — 강도 0.35로 높여서 가장자리를 더 불규칙하게
-                vec3  noisePos   = normalize(samplePt - cen) * 4.0;
-                float nDisp      = fbm(noisePos) * 0.35;
+                // 경계 변위용 각도 노이즈 (구 표면만 사용 → 여기는 normalize 괜찮음)
+                vec3  dirPos     = normalize(samplePt - cen) * 4.0;
+                float nDisp      = fbm(dirPos) * 0.35;
                 float effectiveR = swRadius * (1.0 + nDisp);
 
                 float c3    = dot(oc2, oc2) - effectiveR * effectiveR;
@@ -133,24 +133,34 @@ void main() {
                     inside2 = max(0.0, min(pixDist, -b2 + sq3) - max(0.0, -b2 - sq3));
                 }
 
-                // 페이드 존을 반경 전체(1.0)로 넓히고, pow>1 로 경계 근처에서 빠르게 감쇠
-                float density = clamp(inside2 / (effectiveR * 1.0), 0.0, 1.0);
-                density = pow(density, 1.5);
+                // 구 형태 기반 페이드
+                float baseDensity = clamp(inside2 / (effectiveR * 1.0), 0.0, 1.0);
+                baseDensity = pow(baseDensity, 1.5);
 
-                // 얼룩 텍스처 + 추가 노이즈로 불규칙 패치 생성
-                float nTex  = fbm(noisePos * 2.0) * 0.5 + 0.5;
-                float nEdge = fbm(noisePos * 3.0 + vec3(1.7, 0.9, 2.3)) * 0.5 + 0.5;
-                density *= (0.3 + nTex * 0.5 + nEdge * 0.3);
-                density  = clamp(density, 0.0, 1.0);
+                // ── 뭉게구름 패턴 — 월드스페이스 3D 노이즈 ────────────────────
+                // * 0.5 + 0.5 바이어스 제거 → raw fbm 범위 [0.05~0.75] 사용
+                // (바이어스 적용 시 cloudNoise가 항상 0.55 이상 → 구멍 수학적으로 불가)
+                vec3  wsPos = samplePt * (3.5 / max(effectRadius, 1.0));
+                float nPuff = fbm(wsPos);                              // 저주파: 큰 덩어리 [0.05~0.75]
+                float nTex  = fbm(wsPos * 2.5 + vec3(0.7, 1.3, 0.5)); // 중주파: 내부 결
+                float nFine = fbm(wsPos * 5.0 + vec3(1.7, 0.9, 2.3)); // 고주파: 잔털
 
-                // lightScale: 최솟값 없이 0까지 수렴 → 밤에는 완전 불가시
-                // 0.06~0.22 구간에서 석양/새벽 부드럽게 전환
+                float cloudNoise = nPuff * 0.55 + nTex * 0.30 + nFine * 0.15; // 범위 [0.03~0.75]
+
+                // 0.58 아래 구멍(투명), 0.72 이상 불투명 — 약 90%가 구멍
+                float cloudDensity = smoothstep(0.28, 0.62, cloudNoise);
+
+                float density = baseDensity * cloudDensity;
+                density = clamp(density, 0.0, 1.0);
+
+                // lightScale: 밤에는 완전 불가시
                 float sceneLum   = dot(result, vec3(0.299, 0.587, 0.114));
                 float lightScale = smoothstep(0.18, 0.40, sceneLum);
 
-                // vaporCol을 밝은 하늘(0.7~0.8)보다 더 밝게 → 구름처럼 sky를 밝히는 효과
-                vec3 vaporCol = mix(vec3(0.82, 0.84, 0.90), vec3(0.95, 0.96, 1.00), nTex * 0.5);
-                result = mix(result, vaporCol, vaporAlpha * density * 0.80 * lightScale);
+                // 구름 내부 명암: 노이즈 피크는 밝은 흰색, 낮은 곳은 회백
+                float cloudN01 = clamp(cloudNoise / 0.75, 0.0, 1.0); // [0~0.75] → [0~1] 정규화
+                vec3 vaporCol = mix(vec3(0.78, 0.80, 0.87), vec3(0.95, 0.96, 1.00), cloudN01);
+                result = mix(result, vaporCol, vaporAlpha * density * 0.85 * lightScale);
             }
         }
     }
