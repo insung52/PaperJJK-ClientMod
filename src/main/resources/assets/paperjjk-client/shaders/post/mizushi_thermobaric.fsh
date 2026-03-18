@@ -111,8 +111,10 @@ void main() {
                 vec3  samplePt = rd * proj;
                 float d = length(samplePt - risenCen);
 
-                // 노이즈
-                vec3  nPos   = samplePt * (4.0 / max(fbRadius, 1.0)) + vec3(0.0, -animTime * 0.6, 0.0);
+                // 노이즈 — effectRadius(고정값)로 스케일하여 fbRadius 팽창 중 UV 급변 방지
+                // fbRadius로 나누면 팽창 속도에 따라 스케일이 급변해 반짝거림 발생
+                float noiseScale = 4.0 / max(effectR, 1.0);
+                vec3  nPos   = samplePt * noiseScale + vec3(0.0, -animTime * 0.4, 0.0);
                 float n1     = fbm(nPos);
                 float n2     = fbm(nPos * 2.0 + vec3(animTime * 0.25, 0.0, animTime * 0.4));
                 float fNoise = mix(n1, n2, 0.45);

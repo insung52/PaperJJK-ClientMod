@@ -101,7 +101,7 @@ public class MizushiThermobaricManager {
         float ramp = ss(0f, 0.05f, t);
         // 거리 감쇠: 4×effectRadius 에서 0 (선형)
         float distFade = Math.max(0f, 1f - swR / (effectRadius * 4f));
-        return ramp * distFade * 1.5f;
+        return ramp * distFade * 0.45f;
     }
 
     /** 수증기 응축 강도. swRadius=effectRadius×1.5 에서 50%, effectRadius×3 에서 0. */
