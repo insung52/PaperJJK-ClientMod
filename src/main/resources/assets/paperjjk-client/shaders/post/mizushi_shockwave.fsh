@@ -106,33 +106,43 @@ void main() {
         }
     }
 
-    // ── 2. 수증기 응축 — 가우시안 볼 ────────────────────────────────────────────
+    // ── 2. 수증기 응축 — 원래 insideLen 방식 복원 ──────────────────────────────
     if (vaporAlpha > 0.001) {
-        float tF, tB;
-        if (sphereHit(rd, cen, swRadius * 2.5, tF, tB)) {
-            float tEnter = max(0.0, tF);
-            float tExit  = min(pixDist, tB);
-            if (tExit >= tEnter) {
-                float proj    = clamp(dot(cen, rd), tEnter, tExit);
-                vec3  samplePt = rd * proj;
-                float d = length(samplePt - cen);
+        vec3  oc2  = -cen;
+        float b2   = dot(oc2, rd);
+        float c2   = dot(oc2, oc2) - swRadius * swRadius;
+        float disc2 = b2 * b2 - c2;
+        if (disc2 >= 0.0) {
+            float sq2    = sqrt(disc2);
+            float tEnter = max(0.0, -b2 - sq2);
+            float tExit  = min(pixDist, -b2 + sq2);
+            float insideLen = max(0.0, tExit - tEnter);
+            if (insideLen > 0.01) {
+                vec3  samplePt  = rd * (tEnter + insideLen * 0.5);
 
-                // 구 중심 기준 각도 방향으로 노이즈 → swRadius 변화에 무관하게 안정적
-                vec3  noisePos = normalize(samplePt - cen) * 3.5;
-                float nTex     = fbm(noisePos) * 0.5 + 0.5;
+                // 노이즈로 구 경계 변위 → 울퉁불퉁한 가장자리
+                vec3  noisePos  = normalize(samplePt - cen) * 4.0;
+                float nDisp     = fbm(noisePos) * 0.25;
+                float effectiveR = swRadius * (1.0 + nDisp);
 
-                // sigma를 swRadius에만 의존하지 않고 최솟값 보장
-                float sigma   = max(swRadius * 0.55, effectRadius * 0.15);
-                float density = exp(-pow(d / sigma, 2.0));
-                density *= (0.6 + nTex * 0.6);
+                // 변위된 반경 기반 insideLen 재계산
+                float c3    = dot(oc2, oc2) - effectiveR * effectiveR;
+                float disc3 = b2 * b2 - c3;
+                float inside2 = 0.0;
+                if (disc3 >= 0.0) {
+                    float sq3 = sqrt(disc3);
+                    inside2 = max(0.0, min(pixDist, -b2 + sq3) - max(0.0, -b2 - sq3));
+                }
+
+                float density = clamp(inside2 / (effectiveR * 0.4), 0.0, 1.0);
+                density = pow(density, 0.4);
+
+                float nTex = fbm(noisePos * 2.0) * 0.5 + 0.5;
+                density *= (0.5 + nTex * 0.7);
                 density  = clamp(density, 0.0, 1.0);
 
-                // 낮에는 강하게, 밤에는 약하게 — 하지만 완전히 0으로 자르지 않음
-                float sceneLum   = dot(result, vec3(0.299, 0.587, 0.114));
-                float blendScale = mix(0.35, 0.85, smoothstep(0.05, 0.30, sceneLum));
-
-                vec3 vaporCol = mix(vec3(0.76, 0.79, 0.86), vec3(0.88, 0.91, 0.97), nTex * 0.5);
-                result = mix(result, vaporCol, vaporAlpha * density * blendScale);
+                vec3 vaporCol = mix(vec3(0.60, 0.63, 0.70), vec3(0.75, 0.78, 0.85), nTex * 0.5);
+                result = mix(result, vaporCol, vaporAlpha * density * 0.75);
             }
         }
     }

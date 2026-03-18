@@ -111,16 +111,32 @@ void main() {
                 vec3  samplePt = rd * proj;
                 float d = length(samplePt - risenCen);
 
-                // 노이즈 — effectRadius(고정값)로 스케일하여 fbRadius 팽창 중 UV 급변 방지
-                // fbRadius로 나누면 팽창 속도에 따라 스케일이 급변해 반짝거림 발생
+                // 노이즈 레이어 1: effectR 기준 대형 얼룩 (안정적, 반짝임 없음)
                 float noiseScale = 4.0 / max(effectR, 1.0);
                 vec3  nPos   = samplePt * noiseScale + vec3(0.0, -animTime * 0.4, 0.0);
-                float n1     = fbm(nPos);
-                float n2     = fbm(nPos * 2.0 + vec3(animTime * 0.25, 0.0, animTime * 0.4));
-                float fNoise = mix(n1, n2, 0.45);
 
-                // 가우시안 밀도 (sigma = fbRadius * 0.45 → fbRadius 지점에서 거의 0)
-                float sigma   = fbRadius * 0.45;
+                // 노이즈 레이어 2: fbRadius 기준 고주파 — 큰 폭발에서도 세세한 화염 얼룩 추가
+                float fineScale = 8.0 / max(fbRadius, 1.0);
+                vec3  nPosFine  = samplePt * fineScale + vec3(0.0, -animTime * 0.7, 0.0);
+
+                // 도메인 워핑 (대형 레이어 기준)
+                vec3 warp = vec3(
+                    vNoise(nPos + vec3(0.0,        animTime * 1.5, 0.0)),
+                    vNoise(nPos + vec3(0.31, animTime * 1.2, 0.71)),
+                    vNoise(nPos + vec3(0.63, 0.0,  animTime * 1.0))
+                ) * 0.18 - 0.09;
+                float n1     = fbm(nPos + warp);
+                float n2     = fbm((nPos + warp) * 2.0 + vec3(animTime * 0.25, 0.0, animTime * 0.4));
+                float nCoarse = mix(n1, n2, 0.45);
+
+                // 고주파 레이어 (세세한 화염 결)
+                float nFine  = fbm(nPosFine + warp * 0.4);
+
+                // 두 레이어 합성 — 대형 얼룩 60% + 고주파 결 40%
+                float fNoise = mix(nCoarse, nFine, 0.4);
+
+                // 가우시안 밀도 — sigma 확대(0.45→0.65)로 시각적 화염구 크기 증가
+                float sigma   = fbRadius * 0.65;
                 float density = exp(-pow(d / sigma, 2.0));
                 density *= (0.4 + fNoise * 0.9);
                 density  = clamp(density, 0.0, 1.0);
