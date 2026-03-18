@@ -7,6 +7,7 @@ import com.justheare.paperjjk_client.shader.DomainEffectManager;
 import com.justheare.paperjjk_client.shader.HachiSlashEffectManager;
 import com.justheare.paperjjk_client.shader.KaiSlashEffectManager;
 import com.justheare.paperjjk_client.shader.MizushiChargeEffectManager;
+import com.justheare.paperjjk_client.shader.MizushiThermobaricManager;
 import com.justheare.paperjjk_client.shader.RefractionEffectManager;
 import com.justheare.paperjjk_client.util.WorldToScreenUtil;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -55,6 +56,12 @@ public class GameRendererMixin {
     private static final Identifier MIZUSHI_CHARGE_EFFECT_ID =
         Identifier.of("paperjjk-client", "mizushi_charge");
 
+    private static final Identifier MIZUSHI_SHOCKWAVE_EFFECT_ID =
+        Identifier.of("paperjjk-client", "mizushi_shockwave");
+
+    private static final Identifier MIZUSHI_THERMOBARIC_EFFECT_ID =
+        Identifier.of("paperjjk-client", "mizushi_thermobaric");
+
     /**
      * Apply refraction post-processing BEFORE the HUD renders.
      * This ensures the crosshair, health bar, hotbar etc. are NOT distorted.
@@ -83,7 +90,8 @@ public class GameRendererMixin {
                 && !KaiSlashEffectManager.isAnyActive()
                 && !HachiSlashEffectManager.hasActiveEffects()
                 && !AmbientKaiSlashManager.hasActiveDomains()
-                && !MizushiChargeEffectManager.isActive()) return;
+                && !MizushiChargeEffectManager.isActive()
+                && !MizushiThermobaricManager.isActive()) return;
 
         Camera camera = client.gameRenderer.getCamera();
         // Use the actual dynamic FOV (includes sprint/fly/speed effect/bow draw modifiers)
@@ -444,6 +452,78 @@ public class GameRendererMixin {
                     domain.getDarkRadius(),
                     domain.getDarknessLevel());
                 domainProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
+            }
+        }
+
+        // ── Mizushi Thermobaric Explosion ─────────────────────────────────────
+        if (MizushiThermobaricManager.isActive()) {
+            Matrix4f thermoViewMatrix = new Matrix4f()
+                .rotation(camera.getRotation().conjugate(new Quaternionf()));
+            Matrix4f thermoInvViewProj = projectionMatrix
+                .mul(thermoViewMatrix, new Matrix4f())
+                .invert(new Matrix4f());
+
+            Vec3d thermoCamPos = ((CameraAccessor) camera).getPos();
+            Vec3d thermoCenter = MizushiThermobaricManager.getCenter();
+            float tcRelX = (float)(thermoCenter.x - thermoCamPos.x);
+            float tcRelY = (float)(thermoCenter.y - thermoCamPos.y);
+            float tcRelZ = (float)(thermoCenter.z - thermoCamPos.z);
+
+            // Project center to screen UV; WorldToScreenUtil: y=0 top → flip for shader (y=0 bottom)
+            Vec3d centerScreen = WorldToScreenUtil.worldToScreen(thermoCenter, camera, projectionMatrix);
+            float screenU     = centerScreen != null ? (float) centerScreen.x       : 0.5f;
+            float screenVFlip = centerScreen != null ? 1.0f - (float) centerScreen.y : 0.5f;
+
+            float effectR    = MizushiThermobaricManager.getEffectRadius();
+
+            // ── 1. Shockwave (UV 왜곡 + 수증기 + 지표면 먼지) ─────────────────
+            float swRadius   = MizushiThermobaricManager.getShockwaveRadius();
+            float swStrength = MizushiThermobaricManager.getShockwaveStrength();
+            float vaporAlpha = MizushiThermobaricManager.getVaporAlpha();
+            float dustAlpha  = MizushiThermobaricManager.getDustAlpha();
+            if (swRadius > 0.1f && (swStrength > 0.001f || vaporAlpha > 0.001f || dustAlpha > 0.001f)) {
+                PostEffectProcessor swProcessor;
+                try {
+                    swProcessor = client.getShaderLoader().loadPostEffect(
+                        MIZUSHI_SHOCKWAVE_EFFECT_ID,
+                        Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN)
+                    );
+                } catch (Exception e) {
+                    System.err.println("[JJKMixin] Failed to load mizushi_shockwave: " + e.getMessage());
+                    swProcessor = null;
+                }
+                if (swProcessor != null) {
+                    updateShockwaveUniforms(swProcessor, thermoInvViewProj,
+                        tcRelX, tcRelY, tcRelZ, swRadius,
+                        swStrength, vaporAlpha, dustAlpha, effectR);
+                    swProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
+                }
+            }
+
+            // ── 2. Fireball + Flash + Smoke ──────────────────────────────────
+            float fbRadius   = MizushiThermobaricManager.getFireballRadius();
+            float fireAlpha  = MizushiThermobaricManager.getFireAlpha();
+            float flashAlpha = MizushiThermobaricManager.getFlashAlpha();
+            float smokeAlpha = MizushiThermobaricManager.getSmokeAlpha();
+            float thermoTime = MizushiThermobaricManager.getAnimTime();
+            if (fbRadius > 0.1f || flashAlpha > 0.001f || smokeAlpha > 0.001f) {
+                PostEffectProcessor thermoProcessor;
+                try {
+                    thermoProcessor = client.getShaderLoader().loadPostEffect(
+                        MIZUSHI_THERMOBARIC_EFFECT_ID,
+                        Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN)
+                    );
+                } catch (Exception e) {
+                    System.err.println("[JJKMixin] Failed to load mizushi_thermobaric: " + e.getMessage());
+                    thermoProcessor = null;
+                }
+                if (thermoProcessor != null) {
+                    updateThermobaricUniforms(thermoProcessor, thermoInvViewProj,
+                        tcRelX, tcRelY, tcRelZ, fbRadius,
+                        fireAlpha, flashAlpha, smokeAlpha, thermoTime,
+                        screenU, screenVFlip, effectR);
+                    thermoProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
+                }
             }
         }
     }
@@ -958,6 +1038,146 @@ public class GameRendererMixin {
             }
         } catch (Exception e) {
             System.err.println("[JJKMixin] updateChargeUniforms failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Updates the ShockwaveConfig uniform buffer.
+     *
+     * std140 layout (96 bytes):
+     *   vec4 InvViewProjC0-C3  → 4 × 16 = 64 bytes
+     *   vec4 CenterRel         → 16 bytes  (xyz = cam-relative center, w = shockwave radius)
+     *   vec4 Params            → 16 bytes  (x = swStrength, y = vaporAlpha, z = dustAlpha, w = effectRadius)
+     */
+    @SuppressWarnings("unchecked")
+    private void updateShockwaveUniforms(PostEffectProcessor processor,
+                                          Matrix4f invViewProj,
+                                          float cx, float cy, float cz, float radius,
+                                          float swStrength, float vaporAlpha,
+                                          float dustAlpha, float effectRadius) {
+        try {
+            java.lang.reflect.Field passesField = null;
+            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
+                if (java.util.List.class.isAssignableFrom(f.getType())) { passesField = f; break; }
+            }
+            if (passesField == null) return;
+            passesField.setAccessible(true);
+            List<?> passes = (List<?>) passesField.get(processor);
+            if (passes.isEmpty()) return;
+            Object firstPass = passes.get(0);
+
+            java.lang.reflect.Field ubField = null;
+            for (java.lang.reflect.Field f : firstPass.getClass().getDeclaredFields()) {
+                if (java.util.Map.class.isAssignableFrom(f.getType())) { ubField = f; break; }
+            }
+            if (ubField == null) return;
+            ubField.setAccessible(true);
+            java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> ubs =
+                (java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>) ubField.get(firstPass);
+
+            com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("ShockwaveConfig");
+            if (buf == null) return;
+
+            if ((buf.usage() & 8) == 0 || buf.size() < 96) {
+                buf.close();
+                com.mojang.blaze3d.buffers.GpuBuffer newBuf =
+                    RenderSystem.getDevice().createBuffer(() -> "JJK ShockwaveConfig", 8 | 128, 96);
+                ubs.put("ShockwaveConfig", newBuf);
+                buf = newBuf;
+            }
+
+            org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush();
+            try {
+                com.mojang.blaze3d.buffers.Std140Builder b =
+                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 96);
+                b.putVec4(invViewProj.m00(), invViewProj.m01(), invViewProj.m02(), invViewProj.m03());
+                b.putVec4(invViewProj.m10(), invViewProj.m11(), invViewProj.m12(), invViewProj.m13());
+                b.putVec4(invViewProj.m20(), invViewProj.m21(), invViewProj.m22(), invViewProj.m23());
+                b.putVec4(invViewProj.m30(), invViewProj.m31(), invViewProj.m32(), invViewProj.m33());
+                b.putVec4(cx, cy, cz, radius);
+                b.putVec4(swStrength, vaporAlpha, dustAlpha, effectRadius);
+                RenderSystem.getDevice().createCommandEncoder()
+                    .writeToBuffer(buf.slice(), b.get());
+            } finally {
+                stack.pop();
+            }
+        } catch (Exception e) {
+            System.err.println("[JJKMixin] updateShockwaveUniforms failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Updates the ThermobaricConfig uniform buffer.
+     *
+     * std140 layout (112 bytes):
+     *   vec4 InvViewProjC0-C3  → 4 × 16 = 64 bytes
+     *   vec4 CenterRel         → 16 bytes  (xyz = cam-relative center, w = fireball radius)
+     *   vec4 AlphaParams       → 16 bytes  (x = fireAlpha, y = flashAlpha, z = smokeAlpha, w = time)
+     *   float CenterScreenU    →  4 bytes
+     *   float CenterScreenV    →  4 bytes
+     *   float EffectRadius     →  4 bytes
+     *   float _pad1            →  4 bytes
+     */
+    @SuppressWarnings("unchecked")
+    private void updateThermobaricUniforms(PostEffectProcessor processor,
+                                            Matrix4f invViewProj,
+                                            float cx, float cy, float cz, float fbRadius,
+                                            float fireAlpha, float flashAlpha,
+                                            float smokeAlpha, float time,
+                                            float screenU, float screenV,
+                                            float effectRadius) {
+        try {
+            java.lang.reflect.Field passesField = null;
+            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
+                if (java.util.List.class.isAssignableFrom(f.getType())) { passesField = f; break; }
+            }
+            if (passesField == null) return;
+            passesField.setAccessible(true);
+            List<?> passes = (List<?>) passesField.get(processor);
+            if (passes.isEmpty()) return;
+            Object firstPass = passes.get(0);
+
+            java.lang.reflect.Field ubField = null;
+            for (java.lang.reflect.Field f : firstPass.getClass().getDeclaredFields()) {
+                if (java.util.Map.class.isAssignableFrom(f.getType())) { ubField = f; break; }
+            }
+            if (ubField == null) return;
+            ubField.setAccessible(true);
+            java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> ubs =
+                (java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>) ubField.get(firstPass);
+
+            com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("ThermobaricConfig");
+            if (buf == null) return;
+
+            if ((buf.usage() & 8) == 0 || buf.size() < 112) {
+                buf.close();
+                com.mojang.blaze3d.buffers.GpuBuffer newBuf =
+                    RenderSystem.getDevice().createBuffer(() -> "JJK ThermobaricConfig", 8 | 128, 112);
+                ubs.put("ThermobaricConfig", newBuf);
+                buf = newBuf;
+            }
+
+            org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush();
+            try {
+                com.mojang.blaze3d.buffers.Std140Builder b =
+                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 112);
+                b.putVec4(invViewProj.m00(), invViewProj.m01(), invViewProj.m02(), invViewProj.m03());
+                b.putVec4(invViewProj.m10(), invViewProj.m11(), invViewProj.m12(), invViewProj.m13());
+                b.putVec4(invViewProj.m20(), invViewProj.m21(), invViewProj.m22(), invViewProj.m23());
+                b.putVec4(invViewProj.m30(), invViewProj.m31(), invViewProj.m32(), invViewProj.m33());
+                b.putVec4(cx, cy, cz, fbRadius);
+                b.putVec4(fireAlpha, flashAlpha, smokeAlpha, time);
+                b.putFloat(screenU);
+                b.putFloat(screenV);
+                b.putFloat(effectRadius);
+                b.putFloat(0.0f);
+                RenderSystem.getDevice().createCommandEncoder()
+                    .writeToBuffer(buf.slice(), b.get());
+            } finally {
+                stack.pop();
+            }
+        } catch (Exception e) {
+            System.err.println("[JJKMixin] updateThermobaricUniforms failed: " + e.getMessage());
         }
     }
 

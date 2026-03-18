@@ -60,6 +60,12 @@ public class DebugCommand {
                 .then(literal("charge")
                     .executes(DebugCommand::toggleCharge)
                 )
+                .then(literal("thermobaric")
+                    .executes(DebugCommand::triggerThermobaric)
+                    .then(argument("radius", FloatArgumentType.floatArg(5f, 300f))
+                        .executes(DebugCommand::triggerThermobaricWithRadius)
+                    )
+                )
         );
     }
 
@@ -282,6 +288,41 @@ public class DebugCommand {
         context.getSource().sendFeedback(
             Text.literal("§d[PaperJJK] §f충전 효과 (0,150,0) §" + (active ? "aON (루핑)" : "cOFF"))
         );
+        return 1;
+    }
+
+    private static int triggerThermobaric(CommandContext<FabricClientCommandSource> context) {
+        return triggerThermobaricImpl(context, 50f);
+    }
+
+    private static int triggerThermobaricWithRadius(CommandContext<FabricClientCommandSource> context) {
+        float radius = FloatArgumentType.getFloat(context, "radius");
+        return triggerThermobaricImpl(context, radius);
+    }
+
+    private static int triggerThermobaricImpl(CommandContext<FabricClientCommandSource> context, float radius) {
+        net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+        if (client.player == null) {
+            context.getSource().sendFeedback(Text.literal("§c[Error] No player found"));
+            return 0;
+        }
+        Vec3d blastPos = new Vec3d(0, 100, 0);
+
+        if (com.justheare.paperjjk_client.shader.MizushiThermobaricManager.isActive()) {
+            com.justheare.paperjjk_client.shader.MizushiThermobaricManager.stop();
+            context.getSource().sendFeedback(
+                Text.literal("§d[PaperJJK] §f열압력탄 §cSTOPPED")
+            );
+        } else {
+            com.justheare.paperjjk_client.shader.MizushiThermobaricManager.trigger(blastPos, radius);
+            float durationSec = (4000f + radius * 20f) / 1000f;
+            context.getSource().sendFeedback(
+                Text.literal("§d[PaperJJK] §f열압력탄 §aTRIGGERED §f반경 §a" +
+                    String.format("%.0f", radius) + "블록 §fat §e" +
+                    String.format("(%.1f, %.1f, %.1f)", blastPos.x, blastPos.y, blastPos.z) +
+                    " §f(§e" + String.format("%.1f", durationSec) + "s§f)")
+            );
+        }
         return 1;
     }
 
