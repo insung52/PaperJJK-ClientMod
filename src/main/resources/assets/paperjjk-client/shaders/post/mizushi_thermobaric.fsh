@@ -13,7 +13,7 @@ layout(std140) uniform ThermobaricConfig {
     float CenterScreenU;
     float CenterScreenV;
     float EffectRadius;
-    float _pad1;
+    float RiseAmount;     // monotonically 0→1, controls shared risen center height
 };
 
 in  vec2 texCoord;
@@ -45,9 +45,7 @@ float fbm(vec3 p) {
 }
 
 // ── Ray-sphere 교차 헬퍼 ──────────────────────────────────────────────────────
-// tEnter, tExit 반환. disc < 0 이면 false.
-bool sphereHit(vec3 rd, vec3 cen, float radius,
-               out float tEnter, out float tExit) {
+bool sphereHit(vec3 rd, vec3 cen, float radius, out float tEnter, out float tExit) {
     vec3  oc   = -cen;
     float b    = dot(oc, rd);
     float c    = dot(oc, oc) - radius * radius;
@@ -69,6 +67,7 @@ void main() {
     float animTime   = AlphaParams.w;
     float fbRadius   = CenterRel.w;
     float effectR    = max(EffectRadius, 1.0);
+    float riseAmt    = RiseAmount;
 
     // ── 1. 섬광 — 거리 기반 fade ─────────────────────────────────────────────
     float camDist       = length(CenterRel.xyz);
@@ -94,16 +93,23 @@ void main() {
 
     vec3  cen = CenterRel.xyz;
 
-    // ── 2. 화염구 볼류메트릭 ─────────────────────────────────────────────────
-    if (fireAlpha > 0.005) {
-        float tF, tB;
-        if (sphereHit(rd, cen, fbRadius, tF, tB)) {
-            float tEnter    = max(0.0, tF);
-            float tExit     = min(pixDist, tB);
-            float insideLen = max(0.0, tExit - tEnter);
+    // 화염구+연기 공통 상승 중심 — riseAmt 단조증가이므로 절대 내려가지 않음
+    vec3  risenCen = cen + vec3(0.0, riseAmt * fbRadius * 0.9, 0.0);
 
-            if (insideLen > 0.01) {
-                vec3  samplePt = rd * (tEnter + insideLen * 0.4);
+    // ── 2. 화염구 가우시안 볼 ─────────────────────────────────────────────────
+    // insideLen 대신 구 중심까지의 최근접 거리를 가우시안으로 변환
+    // → 구 경계가 완전히 보이지 않게 됨
+    if (fireAlpha > 0.005 && fbRadius > 0.1) {
+        // 2배 반경으로 교차 검사 → 가우시안이 그 경계 안에서 자연 소멸
+        float tF, tB;
+        if (sphereHit(rd, risenCen, fbRadius * 2.0, tF, tB)) {
+            float tEnter = max(0.0, tF);
+            float tExit  = min(pixDist, tB);
+            if (tExit >= tEnter) {
+                // 가시 구간 내 구 중심에 가장 가까운 레이 지점
+                float proj    = clamp(dot(risenCen, rd), tEnter, tExit);
+                vec3  samplePt = rd * proj;
+                float d = length(samplePt - risenCen);
 
                 // 노이즈
                 vec3  nPos   = samplePt * (4.0 / max(fbRadius, 1.0)) + vec3(0.0, -animTime * 0.6, 0.0);
@@ -111,61 +117,47 @@ void main() {
                 float n2     = fbm(nPos * 2.0 + vec3(animTime * 0.25, 0.0, animTime * 0.4));
                 float fNoise = mix(n1, n2, 0.45);
 
-                // 구 경계 페이드 (가장자리를 부드럽게)
-                float edgeFade = smoothstep(0.0, fbRadius * 0.18, insideLen);
+                // 가우시안 밀도 (sigma = fbRadius * 0.45 → fbRadius 지점에서 거의 0)
+                float sigma   = fbRadius * 0.45;
+                float density = exp(-pow(d / sigma, 2.0));
+                density *= (0.4 + fNoise * 0.9);
+                density  = clamp(density, 0.0, 1.0);
 
-                float density  = clamp(insideLen / (fbRadius * 1.2), 0.0, 1.0);
-                density        = pow(density, 1.2) * edgeFade; // 1.2로 키워 경계 더 부드럽게
-                density       *= (0.4 + fNoise * 0.9);
-                density        = clamp(density, 0.0, 1.0);
-
-                // 화염 색상
                 float g       = clamp(fNoise * 1.3, 0.0, 1.0);
                 vec3  coreCol = vec3(1.0, 0.95, 0.70);
                 vec3  midCol  = vec3(1.0, 0.40, 0.04);
                 vec3  edgeCol = vec3(0.45, 0.08, 0.02);
                 vec3  fireCol = mix(edgeCol, mix(midCol, coreCol, g), g);
 
-                // Bloom additive glow
+                // 블룸 + 메인 화염
                 result += fireCol * (fireAlpha * density * 0.4);
-
-                // 메인 화염
-                result = mix(result, fireCol, clamp(fireAlpha * density, 0.0, 1.0));
+                result  = mix(result, fireCol, clamp(fireAlpha * density, 0.0, 1.0));
             }
         }
     }
 
-    // ── 3. 연기 볼류메트릭 — 구 중심이 위로 상승 ─────────────────────────────
-    if (smokeAlpha > 0.005) {
-        // 연기 구 중심을 smokeAlpha에 비례해 위로 이동 → 연기가 상승하는 느낌
-        float riseOffset = smokeAlpha * fbRadius * 0.9;
-        vec3  smokeCen   = cen + vec3(0.0, riseOffset, 0.0);
-        // 연기가 올라갈수록 구가 약간 퍼짐
-        float smokeRad   = fbRadius * (1.0 + smokeAlpha * 0.25);
-
+    // ── 3. 연기 가우시안 볼 ───────────────────────────────────────────────────
+    // 화염구와 동일한 risenCen 사용 → 둘이 같이 올라감
+    if (smokeAlpha > 0.005 && fbRadius > 0.1) {
+        float smokeRad = fbRadius * 1.25;
         float tF, tB;
-        if (sphereHit(rd, smokeCen, smokeRad, tF, tB)) {
-            float tEnter    = max(0.0, tF);
-            float tExit     = min(pixDist, tB);
-            float insideLen = max(0.0, tExit - tEnter);
+        if (sphereHit(rd, risenCen, smokeRad * 2.0, tF, tB)) {
+            float tEnter = max(0.0, tF);
+            float tExit  = min(pixDist, tB);
+            if (tExit >= tEnter) {
+                float proj    = clamp(dot(risenCen, rd), tEnter, tExit);
+                vec3  samplePt = rd * proj;
+                float d = length(samplePt - risenCen);
 
-            if (insideLen > 0.01) {
-                vec3  samplePt = rd * (tEnter + insideLen * 0.5);
-
-                // 구 경계 페이드
-                float edgeFade = smoothstep(0.0, smokeRad * 0.2, insideLen);
-
-                // 위로 흐르는 연기 노이즈
                 vec3  sPos   = samplePt * (2.0 / max(fbRadius, 1.0)) + vec3(0.0, -animTime * 0.22, 0.0);
                 float sn     = fbm(sPos);
 
-                float density  = clamp(insideLen / (smokeRad * 1.3), 0.0, 1.0);
-                density        = pow(density, 1.1) * edgeFade;
-                density       *= (0.35 + sn * 0.85);
-                density        = clamp(density, 0.0, 1.0);
+                float sigma   = smokeRad * 0.45;
+                float density = exp(-pow(d / sigma, 2.0));
+                density *= (0.35 + sn * 0.85);
+                density  = clamp(density, 0.0, 1.0);
 
-                // 높이에 따른 연기 색
-                float heightF   = clamp((samplePt.y - cen.y) / max(fbRadius, 1.0), 0.0, 1.5);
+                float heightF  = clamp((samplePt.y - cen.y) / max(fbRadius, 1.0), 0.0, 1.5);
                 vec3  smokeLow  = vec3(0.20, 0.13, 0.07);
                 vec3  smokeHigh = vec3(0.28, 0.24, 0.21);
                 vec3  smokeCol  = mix(smokeLow, smokeHigh, clamp(heightF, 0.0, 1.0));

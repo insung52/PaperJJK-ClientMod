@@ -475,6 +475,7 @@ public class GameRendererMixin {
             float screenVFlip = centerScreen != null ? 1.0f - (float) centerScreen.y : 0.5f;
 
             float effectR    = MizushiThermobaricManager.getEffectRadius();
+            float riseAmount = MizushiThermobaricManager.getRiseAmount();
 
             // ── 1. Shockwave (UV 왜곡 + 수증기 + 지표면 먼지) ─────────────────
             float swRadius   = MizushiThermobaricManager.getShockwaveRadius();
@@ -521,7 +522,7 @@ public class GameRendererMixin {
                     updateThermobaricUniforms(thermoProcessor, thermoInvViewProj,
                         tcRelX, tcRelY, tcRelZ, fbRadius,
                         fireAlpha, flashAlpha, smokeAlpha, thermoTime,
-                        screenU, screenVFlip, effectR);
+                        screenU, screenVFlip, effectR, riseAmount);
                     thermoProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
                 }
             }
@@ -1116,7 +1117,7 @@ public class GameRendererMixin {
      *   float CenterScreenU    →  4 bytes
      *   float CenterScreenV    →  4 bytes
      *   float EffectRadius     →  4 bytes
-     *   float _pad1            →  4 bytes
+     *   float RiseAmount       →  4 bytes
      */
     @SuppressWarnings("unchecked")
     private void updateThermobaricUniforms(PostEffectProcessor processor,
@@ -1125,7 +1126,7 @@ public class GameRendererMixin {
                                             float fireAlpha, float flashAlpha,
                                             float smokeAlpha, float time,
                                             float screenU, float screenV,
-                                            float effectRadius) {
+                                            float effectRadius, float riseAmount) {
         try {
             java.lang.reflect.Field passesField = null;
             for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
@@ -1170,7 +1171,7 @@ public class GameRendererMixin {
                 b.putFloat(screenU);
                 b.putFloat(screenV);
                 b.putFloat(effectRadius);
-                b.putFloat(0.0f);
+                b.putFloat(riseAmount);
                 RenderSystem.getDevice().createCommandEncoder()
                     .writeToBuffer(buf.slice(), b.get());
             } finally {

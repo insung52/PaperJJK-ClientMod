@@ -117,4 +117,12 @@ public class MizushiThermobaricManager {
         float swR = shockwaveReach * t;
         return ss(0f, 0.01f, t) * Math.max(0f, 1f - swR / (effectRadius * 6.5f));
     }
+
+    /**
+     * 단조증가 상승 진행도 (0→1). t=0.5 에서 최대.
+     * smokeAlpha 페이드에 연동되지 않으므로 절대 내려가지 않음.
+     */
+    public static float getRiseAmount() {
+        return Math.min(1f, getT() * 2f);
+    }
 }

@@ -29,7 +29,7 @@
                     { "name": "CenterScreenU", "type": "float", "value": 0.5 },
                     { "name": "CenterScreenV", "type": "float", "value": 0.5 },
                     { "name": "EffectRadius",  "type": "float", "value": 50.0 },
-                    { "name": "_pad1",         "type": "float", "value": 0.0 }
+                    { "name": "RiseAmount",     "type": "float", "value": 0.0 }
                 ]
             }
         },
