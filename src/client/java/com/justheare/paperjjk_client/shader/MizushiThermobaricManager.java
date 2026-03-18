@@ -8,12 +8,17 @@ import net.minecraft.util.math.Vec3d;
  * totalDurationMs = 4000 + radius×20 ms
  * shockwaveReach  = radius × 10 블록
  *
- * 화염구 팽창: easeOut quadratic, 0.5초에 최대 크기
- * 수증기:   swRadius = effectRadius×1.5 에서 50%, effectRadius×3 에서 0
+ * 충격파/수증기 전파 속도: SHOCKWAVE_SPEED = 0.34 blocks/ms (= 340 blocks/s = 음속) 고정
+ *   → 반경에 무관하게 항상 동일한 속도로 퍼짐
+ * 화염구 팽창: easeOut quadratic, 1초에 최대 크기
+ * 수증기:   swRadius = effectRadius×3 에서 0
  * 지표면 먼지: swRadius = effectRadius×6.5 에서 0 (선형)
- * 섬광 거리 fade: 셰이더에서 exp(-d²/r²*0.1) 로 처리 (effectRadius를 uniform 전달)
+ * 섬광 거리 fade: 셰이더에서 exp(-d²/r²*0.1) 로 처리
  */
 public class MizushiThermobaricManager {
+
+    // 충격파 전파 속도 고정값 — 음속 340 m/s (= 340 blocks/s, 1블록=1m)
+    private static final float SHOCKWAVE_SPEED = 0.34f; // blocks/ms
 
     private static boolean active          = false;
     private static Vec3d   center          = Vec3d.ZERO;
@@ -89,32 +94,35 @@ public class MizushiThermobaricManager {
 
     // ── Shockwave getters ─────────────────────────────────────────────────────
 
+    /**
+     * 고정 속도(SHOCKWAVE_SPEED)로 전파되는 충격파 반경.
+     * radius=200 기준 0.25 blocks/ms로 캘리브레이션 — 모든 반경에서 동일 속도.
+     */
     public static float getShockwaveRadius() {
-        return shockwaveReach * getT();
+        float elapsed = (float)(System.currentTimeMillis() - startMs);
+        return Math.min(shockwaveReach, SHOCKWAVE_SPEED * elapsed);
     }
 
-    /** 충격파 UV 왜곡 강도. 초기 급상승 후 선형 감쇠 (2×effectRadius 에서 50%). */
+    /** 충격파 UV 왜곡 강도. 초기 급상승 후 거리 감쇠. */
     public static float getShockwaveStrength() {
-        float t   = getT();
-        float swR = shockwaveReach * t;
-        // ramp-up: 첫 0.05t 동안 0→1
-        float ramp = ss(0f, 0.05f, t);
-        // 거리 감쇠: 4×effectRadius 에서 0 (선형)
+        float t        = getT();
+        float swR      = getShockwaveRadius();
+        float ramp     = ss(0f, 0.05f, t);
         float distFade = Math.max(0f, 1f - swR / (effectRadius * 4f));
         return ramp * distFade * 0.45f;
     }
 
-    /** 수증기 응축 강도. swRadius=effectRadius×1.5 에서 50%, effectRadius×3 에서 0. */
+    /** 수증기 응축 강도. swRadius=effectRadius×3 에서 0. */
     public static float getVaporAlpha() {
         float t   = getT();
-        float swR = shockwaveReach * t;
+        float swR = getShockwaveRadius();
         return ss(0f, 0.02f, t) * Math.max(0f, 1f - swR / (effectRadius * 3f));
     }
 
     /** 지표면 먼지 강도. swRadius=effectRadius×6.5 에서 0 (선형). */
     public static float getDustAlpha() {
         float t   = getT();
-        float swR = shockwaveReach * t;
+        float swR = getShockwaveRadius();
         return ss(0f, 0.01f, t) * Math.max(0f, 1f - swR / (effectRadius * 6.5f));
     }
 

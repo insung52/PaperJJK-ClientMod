@@ -116,6 +116,7 @@ public class AmbientKaiSlashManager {
         }
 
         public int getActiveSlashCount() {
+            if (slashSuppressed) return 0;
             float r = Math.min(Math.max(0f, smoothRadius), CAM_RADIUS);
             return Math.min(MAX_SLASHES, Math.max(1, (int)(DENSITY_K * Math.pow(r, 1.3))));
         }
@@ -218,19 +219,32 @@ public class AmbientKaiSlashManager {
 
     // ── API ───────────────────────────────────────────────────────────────────
 
+    /** true이면 참격 렌더링 억제 (fuga 충전 중). */
+    private static boolean slashSuppressed = false;
+
+    public static void setSlashSuppressed(boolean suppressed) { slashSuppressed = suppressed; }
+    public static boolean isSlashSuppressed()                 { return slashSuppressed; }
+
+    /** 모든 활성 도메인에 대해 페이드 아웃 시작 (열압력탄 폭발 시 사용). */
+    public static void startFadeOutAll() {
+        domains.values().forEach(DomainInstance::startFadeOut);
+        slashSuppressed = false; // 억제 해제 (도메인이 사라지므로 불필요)
+    }
+
     public static boolean hasActiveDomains()                   { return !domains.isEmpty(); }
     public static Collection<DomainInstance> getActiveDomains() { return domains.values(); }
 
     /**
-     * START 패킷 수신 시 호출. 도메인이 없으면 새로 생성, 있으면 반경 동기화.
+     * START 패킷 수신 시 호출. 도메인이 없거나 페이드 중이면 새로 생성, 활성 중이면 반경 동기화.
      *
      * @param radius 현재 서버 반경 (초기 START 시 0, 주기적 재전송 시 현재 반경)
      */
     public static void setDomain(UUID id, Vec3d center, float radius) {
         DomainInstance existing = domains.get(id);
-        if (existing != null) {
+        if (existing != null && !existing.isFading()) {
             existing.syncRadius(radius);
         } else {
+            // 없거나 페이드 중(이전 도메인 종료 애니메이션 중) → 새 인스턴스 생성
             domains.put(id, new DomainInstance(id, center, radius));
         }
     }

@@ -64,8 +64,10 @@ public class ClientPacketHandler {
                         case PacketIds.SIMPLE_DOMAIN_TRANSLATE -> handleSimpleDomainTranslate(context.client(), buf);
                         case PacketIds.SLOT_GAUGE_UPDATE -> handleSlotGaugeUpdate(context.client(), buf);
                         case PacketIds.BODY_REIN_UPDATE  -> handleBodyReinUpdate(context.client(), buf);
-                        case PacketIds.KAI_SLASH         -> handleKaiSlash(context.client(), buf);
-                        case PacketIds.HACHI_SLASH       -> handleHachiSlash(context.client(), buf);
+                        case PacketIds.KAI_SLASH            -> handleKaiSlash(context.client(), buf);
+                        case PacketIds.HACHI_SLASH          -> handleHachiSlash(context.client(), buf);
+                        case PacketIds.MIZUSHI_FUGA_CHARGE  -> handleMizushiFugaCharge(context.client(), buf);
+                        case PacketIds.MIZUSHI_THERMOBARIC  -> handleMizushiThermobaric(context.client(), buf);
                         default -> LOGGER.warn("Unknown packet ID: 0x{}", String.format("%02X", packetId));
                     }
                 } catch (Exception e) {
@@ -158,13 +160,19 @@ public class ClientPacketHandler {
                     } else {
                         // Re-broadcast acts as sync
                         existing.syncFromServer(maxRadius);
-                        // setDomain은 도메인이 없으면 새로 생성, 있으면 syncRadius를 호출.
-                        // 타임아웃으로 AmbientKaiSlashManager에서 제거된 경우에도 복구 가능.
+                        // setDomain: 도메인 없으면 새로 생성, 페이드 중이면 새 인스턴스, 활성이면 syncRadius.
                         if (existing.domainType == PacketIds.DomainType.MIZUSHI && existing.isOpen) {
                             net.minecraft.util.math.Vec3d c =
                                 new net.minecraft.util.math.Vec3d(centerX, centerY, centerZ);
                             com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
                                 .setDomain(domainId, c, maxRadius);
+                            // maxRadius=0이면 새 결없영 전개 → 충전 효과 재시작
+                            if (maxRadius == 0f) {
+                                net.minecraft.util.math.Vec3d headPos =
+                                    new net.minecraft.util.math.Vec3d(centerX, centerY + 1.6, centerZ);
+                                com.justheare.paperjjk_client.shader.MizushiChargeEffectManager.start(headPos);
+                                LOGGER.info("[Domain Visual] MIZUSHI(결없영) RE-START → charge + ambient slash re-activated");
+                            }
                         }
                         LOGGER.debug("[Domain Visual] SYNC (via START): id={}, maxRadius={}", domainId, maxRadius);
                     }
@@ -889,6 +897,43 @@ public class ClientPacketHandler {
                 hitX, hitY, hitZ, axisX, axisY, axisZ);
             LOGGER.debug("[Kai Slash] effect at ({},{},{}), axis=({},{},{})",
                 hitX, hitY, hitZ, axisX, axisY, axisZ);
+        });
+    }
+
+    /**
+     * MIZUSHI_FUGA_CHARGE (0x34) — fuga 충전 시작/종료
+     * Format: [action(1)]  0x01=START(참격 억제), 0x02=STOP(복원)
+     */
+    private static void handleMizushiFugaCharge(MinecraftClient client, PacketByteBuf buf) {
+        byte action = buf.readByte();
+        client.execute(() -> {
+            boolean suppress = (action == PacketIds.MizushiFugaAction.START);
+            com.justheare.paperjjk_client.shader.AmbientKaiSlashManager.setSlashSuppressed(suppress);
+            LOGGER.info("[Mizushi Fuga Charge] action=0x{} → slash suppressed={}", String.format("%02X", action), suppress);
+        });
+    }
+
+    /**
+     * MIZUSHI_THERMOBARIC (0x35) — 열압력탄 폭발 트리거
+     * Format: [centerX(8)][centerY(8)][centerZ(8)][radius(4)]
+     * 효과: 참격/분진 postprocessing 종료, 열압력탄 효과 시작
+     */
+    private static void handleMizushiThermobaric(MinecraftClient client, PacketByteBuf buf) {
+        double cx = buf.readDouble();
+        double cy = buf.readDouble();
+        double cz = buf.readDouble();
+        float  radius = buf.readFloat();
+
+        client.execute(() -> {
+            // 기존 결없영 효과 종료
+            com.justheare.paperjjk_client.shader.AmbientKaiSlashManager.startFadeOutAll();
+            com.justheare.paperjjk_client.shader.MizushiChargeEffectManager.stop();
+
+            // 열압력탄 시각 효과 트리거
+            net.minecraft.util.math.Vec3d blastCenter = new net.minecraft.util.math.Vec3d(cx, cy, cz);
+            com.justheare.paperjjk_client.shader.MizushiThermobaricManager.trigger(blastCenter, radius);
+
+            LOGGER.info("[Mizushi Thermobaric] triggered at ({},{},{}) radius={}", cx, cy, cz, radius);
         });
     }
 
