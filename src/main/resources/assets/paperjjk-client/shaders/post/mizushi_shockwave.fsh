@@ -106,26 +106,25 @@ void main() {
         }
     }
 
-    // ── 2. 수증기 응축 — 원래 insideLen 방식 복원 ──────────────────────────────
+    // ── 2. 수증기 응축 ──────────────────────────────────────────────────────────
     if (vaporAlpha > 0.001) {
-        vec3  oc2  = -cen;
-        float b2   = dot(oc2, rd);
-        float c2   = dot(oc2, oc2) - swRadius * swRadius;
+        vec3  oc2   = -cen;
+        float b2    = dot(oc2, rd);
+        float c2    = dot(oc2, oc2) - swRadius * swRadius;
         float disc2 = b2 * b2 - c2;
         if (disc2 >= 0.0) {
-            float sq2    = sqrt(disc2);
-            float tEnter = max(0.0, -b2 - sq2);
-            float tExit  = min(pixDist, -b2 + sq2);
+            float sq2       = sqrt(disc2);
+            float tEnter    = max(0.0, -b2 - sq2);
+            float tExit     = min(pixDist, -b2 + sq2);
             float insideLen = max(0.0, tExit - tEnter);
             if (insideLen > 0.01) {
-                vec3  samplePt  = rd * (tEnter + insideLen * 0.5);
+                vec3  samplePt = rd * (tEnter + insideLen * 0.5);
 
-                // 노이즈로 구 경계 변위 → 울퉁불퉁한 가장자리
-                vec3  noisePos  = normalize(samplePt - cen) * 4.0;
-                float nDisp     = fbm(noisePos) * 0.25;
+                // 노이즈 경계 변위 — 강도 0.35로 높여서 가장자리를 더 불규칙하게
+                vec3  noisePos   = normalize(samplePt - cen) * 4.0;
+                float nDisp      = fbm(noisePos) * 0.35;
                 float effectiveR = swRadius * (1.0 + nDisp);
 
-                // 변위된 반경 기반 insideLen 재계산
                 float c3    = dot(oc2, oc2) - effectiveR * effectiveR;
                 float disc3 = b2 * b2 - c3;
                 float inside2 = 0.0;
@@ -134,15 +133,24 @@ void main() {
                     inside2 = max(0.0, min(pixDist, -b2 + sq3) - max(0.0, -b2 - sq3));
                 }
 
-                float density = clamp(inside2 / (effectiveR * 0.4), 0.0, 1.0);
-                density = pow(density, 0.4);
+                // 페이드 존을 반경 전체(1.0)로 넓히고, pow>1 로 경계 근처에서 빠르게 감쇠
+                float density = clamp(inside2 / (effectiveR * 1.0), 0.0, 1.0);
+                density = pow(density, 1.5);
 
-                float nTex = fbm(noisePos * 2.0) * 0.5 + 0.5;
-                density *= (0.5 + nTex * 0.7);
+                // 얼룩 텍스처 + 추가 노이즈로 불규칙 패치 생성
+                float nTex  = fbm(noisePos * 2.0) * 0.5 + 0.5;
+                float nEdge = fbm(noisePos * 3.0 + vec3(1.7, 0.9, 2.3)) * 0.5 + 0.5;
+                density *= (0.3 + nTex * 0.5 + nEdge * 0.3);
                 density  = clamp(density, 0.0, 1.0);
 
-                vec3 vaporCol = mix(vec3(0.60, 0.63, 0.70), vec3(0.75, 0.78, 0.85), nTex * 0.5);
-                result = mix(result, vaporCol, vaporAlpha * density * 0.75);
+                // 주변 밝기로 색상 자체를 스케일 — 낮에는 밝게, 밤에는 어둡게
+                // (blend 강도가 아닌 색상 밝기를 조절해야 밤에 글로우 없이 자연스러움)
+                float sceneLum   = dot(result, vec3(0.299, 0.587, 0.114));
+                float lightScale = mix(0.15, 1.0, smoothstep(0.05, 0.45, sceneLum));
+
+                vec3 vaporBase = mix(vec3(0.60, 0.63, 0.70), vec3(0.75, 0.78, 0.85), nTex * 0.5);
+                vec3 vaporCol  = vaporBase * lightScale;
+                result = mix(result, vaporCol, vaporAlpha * density * 0.80);
             }
         }
     }
