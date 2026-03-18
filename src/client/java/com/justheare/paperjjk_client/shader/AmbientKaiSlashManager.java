@@ -2,18 +2,22 @@ package com.justheare.paperjjk_client.shader;
 
 import net.minecraft.util.math.Vec3d;
 
-import java.util.Random;
-import java.util.UUID;
+import java.util.*;
 
 /**
- * 결없영 배경 참격 효과 매니저.
+ * 결없영 배경 참격 효과 매니저 — 다중 인스턴스 지원.
  *
- * MAX_SLASHES개 참격 인스턴스를 월드 좌표계에서 관리.
- * 각 슬래시는 한 사이클(kai 스타일: 한쪽→반대쪽 스윕)이 끝나면
- * 새로운 랜덤 위치로 이동한다.
+ * 각 활성 도메인은 DomainInstance로 관리된다.
+ * 매 프레임 updateAll(cam, dtMs)을 한 번 호출한 뒤
+ * getActiveDomains()로 순회하여 렌더링한다.
  *
- * 서버에서 DOMAIN_VISUAL(MIZUSHI) 패킷을 받으면 setDomain()으로 연동.
- * 반경^1.3에 비례하여 활성 참격 개수 조절.
+ * 생명주기:
+ *   setDomain()         → 도메인 생성 또는 재동기화
+ *   syncDomainRadius()  → 반경 갱신 (SYNC 패킷)
+ *   startFadeOut()      → 1초 페이드 아웃 시작 (END 패킷)
+ *   clearAll()          → 즉시 전체 제거 (연결 해제)
+ *
+ * 자동 타임아웃: 10초 이상 SYNC가 오지 않으면 자동 페이드 아웃.
  */
 public class AmbientKaiSlashManager {
 
@@ -22,40 +26,106 @@ public class AmbientKaiSlashManager {
     /** 슬래시 밀도 계수: count = k * radius^1.3, radius=10 → ~64개 */
     private static final float DENSITY_K = 3.2f;
 
-    /** 카메라 기준 슬래시 생성 반경 (블록). 이 범위 내에 집중 배치. */
+    /** 카메라 기준 슬래시 생성 반경 (블록). */
     private static final float CAM_RADIUS = 15f;
 
-    // ── 도메인 연동 상태 ─────────────────────────────────────────────────────
-    private static UUID   activeDomainId = null;
-    /** 참격이 생성되는 구의 중심 (월드 좌표). 서버 도메인 중심으로 업데이트됨. */
-    public static Vec3d  domainCenter   = new Vec3d(-100.0, 150.0, -50.0);
-    /** 서버에서 마지막으로 수신한 반경 (권위값). */
-    public static float  domainRadius   = 50.0f;
-    /** 보간된 부드러운 반경. 렌더링에 실제로 사용됨. */
-    public static float  smoothRadius   = 0f;
+    /** SYNC 없이 이 시간(ms)이 지나면 자동 페이드 아웃. */
+    private static final long TIMEOUT_MS = 10_000L;
 
-    // ── Dead Reckoning 상태 ───────────────────────────────────────────────
-    /** EMA 평활된 성장 속도 (blocks/ms). sync마다 순간 속도로 블렌딩. */
-    private static float estimatedVelocity = 0f;
-    /** 마지막 syncDomainRadius() 수신 시각 (ms). */
-    private static long  lastSyncMs        = 0L;
+    /** 페이드 아웃 지속 시간 (ms). */
+    private static final long FADE_DURATION_MS = 1_000L;
 
-    /** 매 프레임 GameRendererMixin에서 갱신되는 카메라 월드 좌표. */
-    public static Vec3d  cameraPos      = Vec3d.ZERO;
-
-    // ── 시각 파라미터 ────────────────────────────────────────────────────────
+    // ── 시각 파라미터 (렌더러에서 참조) ─────────────────────────────────────────
     public static final float CORE_HALF_WIDTH = 0.002f;
     public static final float BLOOM_WIDTH     = 0.0035f;
-    /** 참격 반길이 기본값 (블록). 원근 투영으로 거리 자동 반영. */
     public static final float SLASH_HALF_LEN  = 3.5f;
 
-    // ── 내부 상태 ────────────────────────────────────────────────────────────
-    private static boolean active  = false;
-    private static long    startMs = 0L;
+    /** 매 프레임 GameRendererMixin에서 갱신. 모든 인스턴스가 공유. */
+    public static Vec3d cameraPos = Vec3d.ZERO;
+
     private static final Random rand = new Random();
 
-    // ── 참격 인스턴스 ────────────────────────────────────────────────────────
+    /** 활성 도메인 맵. 삽입 순서 유지 (LinkedHashMap). */
+    private static final Map<UUID, DomainInstance> domains = new LinkedHashMap<>();
+
+    // ── DomainInstance ────────────────────────────────────────────────────────
+
+    public static class DomainInstance {
+        public final UUID   id;
+        public       Vec3d  center;
+        public       float  serverRadius;
+        public       float  smoothRadius;
+        private      float  estimatedVelocity;
+        private      long   lastSyncMs;
+        private      long   fadeStartMs = 0L; // 0 = 페이드 중 아님
+
+        public final AmbientSlash[] slashes = new AmbientSlash[MAX_SLASHES];
+
+        DomainInstance(UUID id, Vec3d center, float radius) {
+            this.id           = id;
+            this.center       = center;
+            this.serverRadius = Math.max(0f, radius);
+            // smoothRadius는 항상 0에서 시작 (즉시 점프 없음).
+            // 복구 케이스(radius>0)는 estimatedVelocity로 ~1초 내 추격.
+            this.smoothRadius      = 0f;
+            this.estimatedVelocity = radius > 0f ? radius / 1000f : 0f;
+            this.lastSyncMs        = System.currentTimeMillis();
+            for (int i = 0; i < MAX_SLASHES; i++) slashes[i] = new AmbientSlash(this);
+        }
+
+        public boolean isFading()       { return fadeStartMs > 0L; }
+        public boolean isFadeComplete() { return isFading() && System.currentTimeMillis() - fadeStartMs >= FADE_DURATION_MS; }
+
+        public boolean isTimedOut() {
+            return !isFading() && lastSyncMs > 0L && System.currentTimeMillis() - lastSyncMs > TIMEOUT_MS;
+        }
+
+        public void startFadeOut() {
+            if (fadeStartMs == 0L) fadeStartMs = System.currentTimeMillis();
+        }
+
+        public void syncRadius(float newRadius) {
+            long now = System.currentTimeMillis();
+            long dt  = now - lastSyncMs;
+            if (dt > 10) {
+                float instantV = (newRadius - serverRadius) / (float) dt;
+                instantV = Math.max(0f, instantV);
+                if (estimatedVelocity < 0.0001f) {
+                    estimatedVelocity = instantV;
+                } else {
+                    estimatedVelocity = estimatedVelocity * 0.7f + instantV * 0.3f;
+                }
+            }
+            serverRadius = Math.max(serverRadius, newRadius);
+            lastSyncMs   = now;
+            fadeStartMs  = 0L; // SYNC를 받으면 페이드 취소
+        }
+
+        /** 페이드 투명도 [1→0]. 페이드 중이 아닐 때는 1. */
+        public float getFadeAlpha() {
+            if (!isFading()) return 1f;
+            long elapsed = System.currentTimeMillis() - fadeStartMs;
+            return 1f - Math.min(1f, elapsed / (float) FADE_DURATION_MS);
+        }
+
+        public void updateSmoothedRadius(float dtMs) {
+            if (!isFading()) {
+                // 반경은 페이드 중에 변경하지 않음 — 투명도만 감소
+                smoothRadius = Math.min(smoothRadius + estimatedVelocity * dtMs, serverRadius);
+            }
+        }
+
+        public int getActiveSlashCount() {
+            float r = Math.min(Math.max(0f, smoothRadius), CAM_RADIUS);
+            return Math.min(MAX_SLASHES, Math.max(1, (int)(DENSITY_K * Math.pow(r, 1.3))));
+        }
+    }
+
+    // ── AmbientSlash ──────────────────────────────────────────────────────────
+
     public static class AmbientSlash {
+        private final DomainInstance domain;
+
         /** 구 중심 기준 위치 (블록) — 사이클마다 갱신 */
         public float sx, sy, sz;
         /** 방향 단위벡터 — 사이클마다 갱신 */
@@ -68,29 +138,24 @@ public class AmbientKaiSlashManager {
         /** 현재 사이클 시작 시각 (ms) */
         private long cycleStartMs;
 
-        public AmbientSlash() {
+        AmbientSlash(DomainInstance domain) {
+            this.domain = domain;
             period = nextPeriod();
-            // 랜덤 초기 위상: 사이클 시작 시각을 무작위 오프셋만큼 당김
             long phaseOffsetMs = (long)(rand.nextFloat() * period * 1000L);
             cycleStartMs = System.currentTimeMillis() - phaseOffsetMs;
             randomize();
         }
 
-        /** 위치/방향/길이 랜덤 갱신. 카메라 기준 CAM_RADIUS 내부 AND 도메인 구 내부에 생성. */
         private void randomize() {
-            // 카메라의 도메인-로컬 좌표 (도메인 중심을 원점으로)
-            float cx = (float)(cameraPos.x - domainCenter.x);
-            float cy = (float)(cameraPos.y - domainCenter.y);
-            float cz = (float)(cameraPos.z - domainCenter.z);
+            float cx = (float)(cameraPos.x - domain.center.x);
+            float cy = (float)(cameraPos.y - domain.center.y);
+            float cz = (float)(cameraPos.z - domain.center.z);
 
-            float domR  = Math.max(1f, smoothRadius);
+            float domR  = Math.max(1f, domain.smoothRadius);
             float domR2 = domR * domR;
-            // 유효 반경: 도메인이 작으면 도메인 반경, 크면 CAM_RADIUS
-            float r  = Math.min(domR, CAM_RADIUS);
-            float r2 = r * r;
+            float r     = Math.min(domR, CAM_RADIUS);
+            float r2    = r * r;
 
-            // 카메라 기준 구 AND 도메인 구 교집합 내 rejection sampling
-            // 최대 30회 시도 후 실패하면 도메인 구 내부로만 fallback
             float x = 0, y = 0, z = 0;
             boolean found = false;
             for (int tries = 0; tries < 30; tries++) {
@@ -104,7 +169,6 @@ public class AmbientKaiSlashManager {
                 }
             }
             if (!found) {
-                // fallback: 도메인 구 내부에서만 샘플링 (카메라가 도메인 밖에 있는 경우)
                 do {
                     x = (rand.nextFloat() * 2f - 1f) * domR;
                     y = (rand.nextFloat() * 2f - 1f) * domR;
@@ -123,9 +187,7 @@ public class AmbientKaiSlashManager {
             halfLen = SLASH_HALF_LEN * (1.0f + rand.nextFloat() * 0.5f);
         }
 
-        private static float nextPeriod() {
-            return 0.15f + rand.nextFloat() * 0.15f;
-        }
+        private static float nextPeriod() { return 0.15f + rand.nextFloat() * 0.15f; }
 
         /**
          * localT [0, 1] — 현재 사이클 진행도.
@@ -142,22 +204,10 @@ public class AmbientKaiSlashManager {
             return elapsed / period;
         }
 
-        // ── Kai 스타일 애니메이션 (kai_slash.fsh 와 동일 커브) ───────────────
-
-        /** 선두 위치 [0→1]: P1 에서 P2 로 빠르게 이동, t=0.6 에서 완료 */
-        public float getHeadT(float localT) {
-            return smoothstep(0f, 0.6f, localT);
-        }
-
-        /** 꼬리 위치 [0→1]: t=0.3 에서 출발, t=1.0 에서 P2 도달 */
-        public float getTailT(float localT) {
-            return smoothstep(0.3f, 1.0f, localT);
-        }
-
-        /** 전체 불투명도: 양 끝에서 빠르게 fade in/out */
+        public float getHeadT(float localT) { return smoothstep(0f, 0.6f, localT); }
+        public float getTailT(float localT)  { return smoothstep(0.3f, 1.0f, localT); }
         public float getFade(float localT) {
-            return smoothstep(0f, 0.05f, localT)
-                 * (1f - smoothstep(0.95f, 1f, localT));
+            return smoothstep(0f, 0.05f, localT) * (1f - smoothstep(0.95f, 1f, localT));
         }
 
         private static float smoothstep(float e0, float e1, float x) {
@@ -166,106 +216,52 @@ public class AmbientKaiSlashManager {
         }
     }
 
-    private static final AmbientSlash[] slashes = new AmbientSlash[MAX_SLASHES];
+    // ── API ───────────────────────────────────────────────────────────────────
 
-    static {
-        for (int i = 0; i < MAX_SLASHES; i++) slashes[i] = new AmbientSlash();
-    }
-
-    // ── API ──────────────────────────────────────────────────────────────────
-
-    public static boolean isActive() { return active; }
-
-    public static UUID getActiveDomainId() { return activeDomainId; }
-
-    public static void toggle() {
-        active = !active;
-        if (active) startMs = System.currentTimeMillis();
-    }
-
-    public static void activate() {
-        if (!active) { active = true; startMs = System.currentTimeMillis(); }
-    }
-
-    public static void deactivate() { active = false; }
-
-    public static AmbientSlash[] getSlashes() { return slashes; }
-
-    // ── 도메인 연동 API ───────────────────────────────────────────────────────
+    public static boolean hasActiveDomains()                   { return !domains.isEmpty(); }
+    public static Collection<DomainInstance> getActiveDomains() { return domains.values(); }
 
     /**
-     * MIZUSHI 도메인 시작 시 호출.
-     * 도메인 중심/반경을 설정하고 ambient slash 효과를 활성화한다.
+     * START 패킷 수신 시 호출. 도메인이 없으면 새로 생성, 있으면 반경 동기화.
+     *
+     * @param radius 현재 서버 반경 (초기 START 시 0, 주기적 재전송 시 현재 반경)
      */
     public static void setDomain(UUID id, Vec3d center, float radius) {
-        activeDomainId    = id;
-        domainCenter      = center;
-        domainRadius      = Math.max(0f, radius);
-        // radius > 0 이면 이미 전개된 상태 (debug 커맨드 등) → 즉시 표시
-        // radius = 0 이면 서버 sync가 반경을 올려줌
-        smoothRadius      = domainRadius;
-        estimatedVelocity = 0f;
-        // 0L이 아닌 현재 시각으로 초기화 → 첫 sync에서 dt가 올바르게 계산됨
-        lastSyncMs        = System.currentTimeMillis();
-        activate();
+        DomainInstance existing = domains.get(id);
+        if (existing != null) {
+            existing.syncRadius(radius);
+        } else {
+            domains.put(id, new DomainInstance(id, center, radius));
+        }
     }
 
-    /**
-     * 서버 SYNC 패킷으로 반경 갱신.
-     * 순간 속도를 계산해 EMA(α=0.3)로 estimatedVelocity에 블렌딩.
-     * 첫 sync(cold start)는 EMA 없이 직접 설정 → 즉각 반응.
-     * domainRadius는 천장 역할 — 절대 낮추지 않음.
-     */
+    /** SYNC 패킷 수신 시 호출. */
     public static void syncDomainRadius(UUID id, float newRadius) {
-        if (!id.equals(activeDomainId)) return;
-        long now = System.currentTimeMillis();
-        long dt  = now - lastSyncMs;
-        if (dt > 10) {
-            float instantV = (newRadius - domainRadius) / (float) dt;
-            instantV = Math.max(0f, instantV);
-            if (estimatedVelocity < 0.0001f) {
-                // Cold start: EMA 수렴 대기 없이 즉시 설정
-                estimatedVelocity = instantV;
-            } else {
-                estimatedVelocity = estimatedVelocity * 0.7f + instantV * 0.3f;
-            }
+        DomainInstance d = domains.get(id);
+        if (d != null) d.syncRadius(newRadius);
+    }
+
+    /** END 패킷 수신 시 호출 — 1초 페이드 아웃 시작. */
+    public static void startFadeOut(UUID id) {
+        DomainInstance d = domains.get(id);
+        if (d != null) d.startFadeOut();
+    }
+
+    /** 연결 해제 / 월드 전환 시 모든 효과를 즉시 제거. */
+    public static void clearAll() { domains.clear(); }
+
+    /**
+     * 매 프레임 GameRendererMixin에서 한 번 호출.
+     * 카메라 위치 갱신, 반경 보간, 타임아웃/페이드 완료 제거.
+     */
+    public static void updateAll(Vec3d cam, float dtMs) {
+        cameraPos = cam;
+        Iterator<Map.Entry<UUID, DomainInstance>> it = domains.entrySet().iterator();
+        while (it.hasNext()) {
+            DomainInstance d = it.next().getValue();
+            if (d.isTimedOut()) d.startFadeOut();
+            d.updateSmoothedRadius(dtMs);
+            if (d.isFadeComplete()) it.remove();
         }
-        domainRadius = Math.max(domainRadius, newRadius);
-        lastSyncMs   = now;
-    }
-
-    /**
-     * 매 프레임 호출.
-     * estimatedVelocity로 적분하되 domainRadius(서버 천장)를 절대 초과하지 않는다.
-     * TPS 드랍 → sync 간격 증가 → instantV 감소 → EMA로 velocity 완만 감소 → 자연스러운 감속.
-     */
-    public static void updateSmoothedRadius(float dtMs) {
-        smoothRadius = Math.min(
-            smoothRadius + estimatedVelocity * dtMs,
-            domainRadius
-        );
-    }
-
-    /**
-     * 도메인 종료 시 호출 (END/COMPLETE 후 제거).
-     */
-    public static void clearDomain(UUID id) {
-        if (id.equals(activeDomainId)) {
-            activeDomainId    = null;
-            smoothRadius      = 0f;
-            domainRadius      = 0f;
-            estimatedVelocity = 0f;
-            lastSyncMs        = 0L;
-            deactivate();
-        }
-    }
-
-    /**
-     * 현재 반경에 따른 활성 참격 개수. smoothRadius 기준.
-     * count = min(MAX_SLASHES, round(DENSITY_K * radius^1.3))
-     */
-    public static int getActiveSlashCount() {
-        float r = Math.min(Math.max(0f, smoothRadius), CAM_RADIUS);
-        return Math.min(MAX_SLASHES, Math.max(1, (int)(DENSITY_K * Math.pow(r, 1.3))));
     }
 }

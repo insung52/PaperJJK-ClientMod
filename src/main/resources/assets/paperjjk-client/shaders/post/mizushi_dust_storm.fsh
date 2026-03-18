@@ -11,7 +11,7 @@ layout(std140) uniform DustStormConfig {
     vec4  DomainCenter;
     float DomainRadius;
     float Time;
-    float _pad0;
+    float Alpha;
     float _pad1;
 };
 
@@ -123,5 +123,6 @@ void main() {
                       * staticFade;
     result = mix(result, vec3(1.0), staticAlpha * baseFog);
 
-    fragColor = vec4(result, orig.a);
+    // Alpha: 페이드 아웃 시 효과를 원본으로 블렌딩 (반경 변화 없이 투명도만 감소)
+    fragColor = vec4(mix(orig.rgb, result, Alpha), orig.a);
 }

@@ -82,7 +82,7 @@ public class GameRendererMixin {
         if (effects.isEmpty() && !DomainEffectManager.hasActiveDomains()
                 && !KaiSlashEffectManager.isAnyActive()
                 && !HachiSlashEffectManager.hasActiveEffects()
-                && !AmbientKaiSlashManager.isActive()
+                && !AmbientKaiSlashManager.hasActiveDomains()
                 && !MizushiChargeEffectManager.isActive()) return;
 
         Camera camera = client.gameRenderer.getCamera();
@@ -279,124 +279,119 @@ public class GameRendererMixin {
             }
         }
 
-        // ── Ambient Kai Slash (결없영 배경 참격) — screen-space 2D, 단일 pass ──
-        // smoothRadius > 0 조건: 충전 2초 딜레이 중에는 서버에서 radius=0 이 오므로 렌더 안 함
-        if (AmbientKaiSlashManager.isActive() && AmbientKaiSlashManager.smoothRadius > 0f) {
-            // 카메라 위치를 슬래시 배치 계산에 활용하도록 매 프레임 업데이트
-            AmbientKaiSlashManager.cameraPos = ((CameraAccessor) camera).getPos();
-            // Dead reckoning: smoothRadius 갱신 (프레임 델타 ms 기준)
+        // ── Ambient Kai Slash (결없영 배경 참격) — 다중 도메인 지원 ──────────────
+        {
+            Vec3d ambCamPos = ((CameraAccessor) camera).getPos();
             float ambientDtMs = renderTickCounter.getDynamicDeltaTicks() * 50f;
-            AmbientKaiSlashManager.updateSmoothedRadius(ambientDtMs);
+            AmbientKaiSlashManager.updateAll(ambCamPos, ambientDtMs);
+        }
+        if (AmbientKaiSlashManager.hasActiveDomains()) {
+            // 공유 행렬 한 번만 계산
+            Matrix4f ambViewMatrix = new Matrix4f()
+                .rotation(camera.getRotation().conjugate(new Quaternionf()));
+            Matrix4f ambInvViewProj = projectionMatrix
+                .mul(ambViewMatrix, new Matrix4f())
+                .invert(new Matrix4f());
+            Vec3d ambCamPos = AmbientKaiSlashManager.cameraPos;
+            float stormTime = (float)(System.currentTimeMillis() % 100000L) / 1000.0f;
 
-            // ── 1. Mizushi Dust Storm — 먼저 렌더 (배경 fog/왜곡) ─────────────────
-            {
-                Matrix4f dustViewMatrix = new Matrix4f()
-                    .rotation(camera.getRotation().conjugate(new Quaternionf()));
-                Matrix4f dustInvViewProj = projectionMatrix
-                    .mul(dustViewMatrix, new Matrix4f())
-                    .invert(new Matrix4f());
+            for (AmbientKaiSlashManager.DomainInstance domain
+                    : AmbientKaiSlashManager.getActiveDomains()) {
+                if (domain.smoothRadius <= 0f) continue;
 
-                Vec3d camPos3 = ((CameraAccessor) camera).getPos();
-                Vec3d domCenter3 = AmbientKaiSlashManager.domainCenter;
-                float dcRelX = (float)(domCenter3.x - camPos3.x);
-                float dcRelY = (float)(domCenter3.y - camPos3.y);
-                float dcRelZ = (float)(domCenter3.z - camPos3.z);
-                float domRadius3 = AmbientKaiSlashManager.smoothRadius;
-                float stormTime  = (float)(System.currentTimeMillis() % 100000L) / 1000.0f;
+                // ── 1. Mizushi Dust Storm ────────────────────────────────────
+                {
+                    float dcRelX = (float)(domain.center.x - ambCamPos.x);
+                    float dcRelY = (float)(domain.center.y - ambCamPos.y);
+                    float dcRelZ = (float)(domain.center.z - ambCamPos.z);
 
-                PostEffectProcessor dustProcessor;
+                    PostEffectProcessor dustProcessor;
+                    try {
+                        dustProcessor = client.getShaderLoader().loadPostEffect(
+                            MIZUSHI_DUST_STORM_EFFECT_ID,
+                            Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN)
+                        );
+                    } catch (Exception e) {
+                        System.err.println("[JJKMixin] Failed to load mizushi_dust_storm post effect: " + e.getMessage());
+                        dustProcessor = null;
+                    }
+                    if (dustProcessor != null) {
+                        updateDustStormUniforms(dustProcessor, ambInvViewProj,
+                            dcRelX, dcRelY, dcRelZ, domain.smoothRadius, stormTime,
+                            domain.getFadeAlpha());
+                        dustProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
+                    }
+                }
+
+                // ── 2. Ambient Kai Slash ─────────────────────────────────────
+                PostEffectProcessor ambientProcessor;
                 try {
-                    dustProcessor = client.getShaderLoader().loadPostEffect(
-                        MIZUSHI_DUST_STORM_EFFECT_ID,
+                    ambientProcessor = client.getShaderLoader().loadPostEffect(
+                        AMBIENT_KAI_SLASH_EFFECT_ID,
                         Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN)
                     );
                 } catch (Exception e) {
-                    System.err.println("[JJKMixin] Failed to load mizushi_dust_storm post effect: " + e.getMessage());
-                    dustProcessor = null;
+                    System.err.println("[JJKMixin] Failed to load ambient_kai_slash post effect: " + e.getMessage());
+                    ambientProcessor = null;
                 }
-                if (dustProcessor != null) {
-                    updateDustStormUniforms(dustProcessor, dustInvViewProj,
-                        dcRelX, dcRelY, dcRelZ, domRadius3, stormTime);
-                    dustProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
+                if (ambientProcessor != null) {
+                    AmbientKaiSlashManager.AmbientSlash[] slashes = domain.slashes;
+                    final int SLOT = 12; // floats per slash (3 vec4)
+                    float[] slashData = new float[AmbientKaiSlashManager.MAX_SLASHES * SLOT];
+                    int activeCount = 0;
+                    int maxActiveSlashes = domain.getActiveSlashCount();
+                    Vec3d ambientCenter = domain.center;
+                    float domainAlpha = domain.getFadeAlpha();
+
+                    for (AmbientKaiSlashManager.AmbientSlash slash : slashes) {
+                        if (activeCount >= maxActiveSlashes) break;
+
+                        float localT = slash.getLocalT();
+                        float fade   = slash.getFade(localT) * domainAlpha;
+                        if (fade < 0.002f) continue;
+
+                        Vec3d ep1 = new Vec3d(
+                            ambientCenter.x + slash.sx + slash.dx * slash.halfLen,
+                            ambientCenter.y + slash.sy + slash.dy * slash.halfLen,
+                            ambientCenter.z + slash.sz + slash.dz * slash.halfLen);
+                        Vec3d ep2 = new Vec3d(
+                            ambientCenter.x + slash.sx - slash.dx * slash.halfLen,
+                            ambientCenter.y + slash.sy - slash.dy * slash.halfLen,
+                            ambientCenter.z + slash.sz - slash.dz * slash.halfLen);
+
+                        Vec3d sp1 = WorldToScreenUtil.worldToScreen(ep1, camera, projectionMatrix);
+                        Vec3d sp2 = WorldToScreenUtil.worldToScreen(ep2, camera, projectionMatrix);
+                        if (sp1 == null || sp2 == null) continue;
+
+                        float headT = slash.getHeadT(localT);
+                        float tailT = slash.getTailT(localT);
+
+                        float dist      = (float)((sp1.z + sp2.z) * 0.5);
+                        float distScale = 3.0f / Math.max(3.0f, dist);
+
+                        float depth1 = WorldToScreenUtil.worldToDepth(ep1, camera, projectionMatrix);
+                        float depth2 = WorldToScreenUtil.worldToDepth(ep2, camera, projectionMatrix);
+
+                        int base = activeCount * SLOT;
+                        slashData[base     ] = (float) sp1.x;
+                        slashData[base +  1] = 1.0f - (float) sp1.y;
+                        slashData[base +  2] = (float) sp2.x;
+                        slashData[base +  3] = 1.0f - (float) sp2.y;
+                        slashData[base +  4] = headT;
+                        slashData[base +  5] = tailT;
+                        slashData[base +  6] = fade;
+                        slashData[base +  7] = distScale;
+                        slashData[base +  8] = depth1;
+                        slashData[base +  9] = depth2;
+                        slashData[base + 10] = (float) sp1.z;
+                        slashData[base + 11] = (float) sp2.z;
+
+                        activeCount++;
+                    }
+
+                    updateAmbientKaiUniforms(ambientProcessor, activeCount, slashData);
+                    ambientProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
                 }
-            }
-
-            // ── 2. Ambient Kai Slash — fog 위에 덧씌워 렌더 ───────────────────────
-            PostEffectProcessor ambientProcessor;
-            try {
-                ambientProcessor = client.getShaderLoader().loadPostEffect(
-                    AMBIENT_KAI_SLASH_EFFECT_ID,
-                    Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN)
-                );
-            } catch (Exception e) {
-                System.err.println("[JJKMixin] Failed to load ambient_kai_slash post effect: " + e.getMessage());
-                ambientProcessor = null;
-            }
-            if (ambientProcessor != null) {
-                AmbientKaiSlashManager.AmbientSlash[] slashes = AmbientKaiSlashManager.getSlashes();
-
-                // Slashes[i*3]   = (p1x, p1y, p2x, p2y)
-                // Slashes[i*3+1] = (headT, tailT, fade, distScale)
-                // Slashes[i*3+2] = (depth1, depth2, 0, 0)
-                final int SLOT = 12; // floats per slash (3 vec4)
-                float[] slashData = new float[AmbientKaiSlashManager.MAX_SLASHES * SLOT];
-                int activeCount = 0;
-                int maxActiveSlashes = AmbientKaiSlashManager.getActiveSlashCount();
-
-                Vec3d ambientCenter = AmbientKaiSlashManager.domainCenter;
-
-                for (AmbientKaiSlashManager.AmbientSlash slash : slashes) {
-                    if (activeCount >= maxActiveSlashes) break;
-
-                    float localT = slash.getLocalT();  // 사이클 완료 시 자동 regenerate
-                    float fade   = slash.getFade(localT);
-                    if (fade < 0.002f) continue;
-
-                    // 슬래시 끝점 (full halfLen — kai는 길이 고정, 스윕으로 애니메이션)
-                    Vec3d ep1 = new Vec3d(
-                        ambientCenter.x + slash.sx + slash.dx * slash.halfLen,
-                        ambientCenter.y + slash.sy + slash.dy * slash.halfLen,
-                        ambientCenter.z + slash.sz + slash.dz * slash.halfLen);
-                    Vec3d ep2 = new Vec3d(
-                        ambientCenter.x + slash.sx - slash.dx * slash.halfLen,
-                        ambientCenter.y + slash.sy - slash.dy * slash.halfLen,
-                        ambientCenter.z + slash.sz - slash.dz * slash.halfLen);
-
-                    Vec3d sp1 = WorldToScreenUtil.worldToScreen(ep1, camera, projectionMatrix);
-                    Vec3d sp2 = WorldToScreenUtil.worldToScreen(ep2, camera, projectionMatrix);
-                    if (sp1 == null || sp2 == null) continue;
-
-                    float headT = slash.getHeadT(localT);
-                    float tailT = slash.getTailT(localT);
-
-                    // 거리 기반 두께 스케일 (기준 거리 3블록, 가까울수록 굵게)
-                    float dist      = (float)((sp1.z + sp2.z) * 0.5);
-                    float distScale = 3.0f / Math.max(3.0f, dist);
-
-                    // NDC depth (depth buffer 비교용)
-                    float depth1 = WorldToScreenUtil.worldToDepth(ep1, camera, projectionMatrix);
-                    float depth2 = WorldToScreenUtil.worldToDepth(ep2, camera, projectionMatrix);
-
-                    // WorldToScreenUtil: y=0 위쪽 → 셰이더 texCoord: y=0 아래쪽
-                    int base = activeCount * SLOT;
-                    slashData[base     ] = (float) sp1.x;
-                    slashData[base +  1] = 1.0f - (float) sp1.y;
-                    slashData[base +  2] = (float) sp2.x;
-                    slashData[base +  3] = 1.0f - (float) sp2.y;
-                    slashData[base +  4] = headT;
-                    slashData[base +  5] = tailT;
-                    slashData[base +  6] = fade;
-                    slashData[base +  7] = distScale;
-                    slashData[base +  8] = depth1;
-                    slashData[base +  9] = depth2;
-                    slashData[base + 10] = (float) sp1.z; // camDist1 (블록 단위)
-                    slashData[base + 11] = (float) sp2.z; // camDist2
-
-                    activeCount++;
-                }
-
-                updateAmbientKaiUniforms(ambientProcessor, activeCount, slashData);
-                ambientProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
             }
         }
 
@@ -678,7 +673,7 @@ public class GameRendererMixin {
     private void updateDustStormUniforms(PostEffectProcessor processor,
                                           Matrix4f invViewProj,
                                           float domCX, float domCY, float domCZ,
-                                          float domRadius, float time) {
+                                          float domRadius, float time, float alpha) {
         try {
             java.lang.reflect.Field passesField = null;
             for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
@@ -724,7 +719,7 @@ public class GameRendererMixin {
                 // DomainRadius, Time, padding
                 b.putFloat(domRadius);
                 b.putFloat(time);
-                b.putFloat(0.0f);
+                b.putFloat(alpha);
                 b.putFloat(0.0f);
                 RenderSystem.getDevice().createCommandEncoder()
                     .writeToBuffer(buf.slice(), b.get());

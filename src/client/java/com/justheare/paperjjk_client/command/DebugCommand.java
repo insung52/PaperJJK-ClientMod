@@ -239,10 +239,22 @@ public class DebugCommand {
     }
 
     private static int toggleAmbientSlash(CommandContext<FabricClientCommandSource> context) {
-        com.justheare.paperjjk_client.shader.AmbientKaiSlashManager.toggle();
-        boolean active = com.justheare.paperjjk_client.shader.AmbientKaiSlashManager.isActive();
+        boolean active = com.justheare.paperjjk_client.shader.AmbientKaiSlashManager.hasActiveDomains();
+        if (active) {
+            com.justheare.paperjjk_client.shader.AmbientKaiSlashManager.clearAll();
+        } else {
+            // 디버그용 도메인 생성
+            net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
+            if (mc.player != null) {
+                net.minecraft.util.math.Vec3d center =
+                    new net.minecraft.util.math.Vec3d(mc.player.getX(), mc.player.getY(), mc.player.getZ());
+                java.util.UUID debugId = java.util.UUID.fromString("00000000-0000-0000-0000-000000000001");
+                com.justheare.paperjjk_client.shader.AmbientKaiSlashManager.setDomain(debugId, center, 30f);
+            }
+        }
+        boolean nowActive = com.justheare.paperjjk_client.shader.AmbientKaiSlashManager.hasActiveDomains();
         context.getSource().sendFeedback(
-            Text.literal("§d[PaperJJK] §f결없영 참격 효과 §" + (active ? "aON" : "cOFF"))
+            Text.literal("§d[PaperJJK] §f결없영 참격 효과 §" + (nowActive ? "aON" : "cOFF"))
         );
         return 1;
     }

@@ -139,23 +139,32 @@ public class ClientPacketHandler {
                         if (domainType == PacketIds.DomainType.MIZUSHI && isOpen) {
                             net.minecraft.util.math.Vec3d center =
                                 new net.minecraft.util.math.Vec3d(centerX, centerY, centerZ);
+                            // maxRadius=0 → 초기 전개, maxRadius>0 → 늦게 들어온 플레이어(주기적 재전송)
                             com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
-                                .setDomain(domainId, center, 0f);
-                            // 2초 충전 애니메이션 시작 (머리 위치 = feet + 1.6)
-                            net.minecraft.util.math.Vec3d headPos =
-                                new net.minecraft.util.math.Vec3d(centerX, centerY + 1.6, centerZ);
-                            com.justheare.paperjjk_client.shader.MizushiChargeEffectManager.start(headPos);
-                            LOGGER.info("[Domain Visual] MIZUSHI(결없영) START → charge + ambient slash activated");
+                                .setDomain(domainId, center, maxRadius);
+                            // 충전 애니메이션은 초기 전개(radius=0)일 때만 재생
+                            if (maxRadius == 0f) {
+                                net.minecraft.util.math.Vec3d headPos =
+                                    new net.minecraft.util.math.Vec3d(centerX, centerY + 1.6, centerZ);
+                                com.justheare.paperjjk_client.shader.MizushiChargeEffectManager.start(headPos);
+                                LOGGER.info("[Domain Visual] MIZUSHI(결없영) START → charge + ambient slash activated");
+                            } else {
+                                LOGGER.info("[Domain Visual] MIZUSHI(결없영) RECOVERY START → ambient slash at radius={}", maxRadius);
+                            }
                         }
 
                         LOGGER.info("[Domain Visual] START: id={}, type={}, center=({},{},{}), maxRadius={}, isOpen={}",
                             domainId, domainType, centerX, centerY, centerZ, maxRadius, isOpen);
                     } else {
-                        // Re-broadcast every 5 ticks acts as sync
+                        // Re-broadcast acts as sync
                         existing.syncFromServer(maxRadius);
-                        if (existing.domainType == PacketIds.DomainType.MIZUSHI) {
+                        // setDomain은 도메인이 없으면 새로 생성, 있으면 syncRadius를 호출.
+                        // 타임아웃으로 AmbientKaiSlashManager에서 제거된 경우에도 복구 가능.
+                        if (existing.domainType == PacketIds.DomainType.MIZUSHI && existing.isOpen) {
+                            net.minecraft.util.math.Vec3d c =
+                                new net.minecraft.util.math.Vec3d(centerX, centerY, centerZ);
                             com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
-                                .syncDomainRadius(domainId, maxRadius);
+                                .setDomain(domainId, c, maxRadius);
                         }
                         LOGGER.debug("[Domain Visual] SYNC (via START): id={}, maxRadius={}", domainId, maxRadius);
                     }
@@ -187,9 +196,9 @@ public class ClientPacketHandler {
 
                 client.execute(() -> {
                     ClientGameData.removeDomain(domainId);
-                    // MIZUSHI 도메인 종료 시 ambient slash + 충전 효과 비활성화
+                    // MIZUSHI 도메인 종료 시 1초 페이드 아웃 시작
                     com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
-                        .clearDomain(domainId);
+                        .startFadeOut(domainId);
                     com.justheare.paperjjk_client.shader.MizushiChargeEffectManager.stop();
                     LOGGER.info("[Domain Visual] END: id={}", domainId);
                 });

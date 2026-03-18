@@ -108,6 +108,8 @@ public class PaperJJKClientClient implements ClientModInitializer {
 			LOGGER.info("서버 연결 해제: 데이터 정리");
 			ClientGameData.reset();
 			JJKKeyBinds.reset();
+			com.justheare.paperjjk_client.shader.AmbientKaiSlashManager.clearAll();
+			com.justheare.paperjjk_client.shader.MizushiChargeEffectManager.stop();
 			// JJKPostProcessor.getInstance().cleanup();
 			// DomainRenderer.dispose();
 		});
