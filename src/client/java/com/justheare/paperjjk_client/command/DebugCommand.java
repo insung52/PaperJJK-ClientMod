@@ -57,6 +57,9 @@ public class DebugCommand {
                         .executes(DebugCommand::setAmbientSlashRadius)
                     )
                 )
+                .then(literal("charge")
+                    .executes(DebugCommand::toggleCharge)
+                )
         );
     }
 
@@ -257,6 +260,15 @@ public class DebugCommand {
         context.getSource().sendFeedback(
             Text.literal("§d[PaperJJK] §f결없영 반경 §a" + String.format("%.1f", radius) +
                 "§f블록, 중심 §e" + String.format("(%.1f, %.1f, %.1f)", center.x, center.y, center.z))
+        );
+        return 1;
+    }
+
+    private static int toggleCharge(CommandContext<FabricClientCommandSource> context) {
+        com.justheare.paperjjk_client.shader.MizushiChargeEffectManager.toggleDebug();
+        boolean active = com.justheare.paperjjk_client.shader.MizushiChargeEffectManager.isDebugMode();
+        context.getSource().sendFeedback(
+            Text.literal("§d[PaperJJK] §f충전 효과 (0,150,0) §" + (active ? "aON (루핑)" : "cOFF"))
         );
         return 1;
     }

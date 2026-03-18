@@ -135,13 +135,17 @@ public class ClientPacketHandler {
                         domain.isExpanding = true;
                         ClientGameData.addDomain(domainId, domain);
 
-                        // MIZUSHI 결없영(isOpen=true)만 ambient slash 효과 활성화
+                        // MIZUSHI 결없영(isOpen=true)만 ambient slash + 충전 효과 활성화
                         if (domainType == PacketIds.DomainType.MIZUSHI && isOpen) {
                             net.minecraft.util.math.Vec3d center =
                                 new net.minecraft.util.math.Vec3d(centerX, centerY, centerZ);
                             com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
                                 .setDomain(domainId, center, 0f);
-                            LOGGER.info("[Domain Visual] MIZUSHI(결없영) START → ambient slash activated");
+                            // 2초 충전 애니메이션 시작 (머리 위치 = feet + 1.6)
+                            net.minecraft.util.math.Vec3d headPos =
+                                new net.minecraft.util.math.Vec3d(centerX, centerY + 1.6, centerZ);
+                            com.justheare.paperjjk_client.shader.MizushiChargeEffectManager.start(headPos);
+                            LOGGER.info("[Domain Visual] MIZUSHI(결없영) START → charge + ambient slash activated");
                         }
 
                         LOGGER.info("[Domain Visual] START: id={}, type={}, center=({},{},{}), maxRadius={}, isOpen={}",
@@ -183,9 +187,10 @@ public class ClientPacketHandler {
 
                 client.execute(() -> {
                     ClientGameData.removeDomain(domainId);
-                    // MIZUSHI 도메인 종료 시 ambient slash 비활성화
+                    // MIZUSHI 도메인 종료 시 ambient slash + 충전 효과 비활성화
                     com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
                         .clearDomain(domainId);
+                    com.justheare.paperjjk_client.shader.MizushiChargeEffectManager.stop();
                     LOGGER.info("[Domain Visual] END: id={}", domainId);
                 });
             }

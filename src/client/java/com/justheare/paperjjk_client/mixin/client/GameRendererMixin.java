@@ -6,6 +6,7 @@ import com.justheare.paperjjk_client.shader.AmbientKaiSlashManager;
 import com.justheare.paperjjk_client.shader.DomainEffectManager;
 import com.justheare.paperjjk_client.shader.HachiSlashEffectManager;
 import com.justheare.paperjjk_client.shader.KaiSlashEffectManager;
+import com.justheare.paperjjk_client.shader.MizushiChargeEffectManager;
 import com.justheare.paperjjk_client.shader.RefractionEffectManager;
 import com.justheare.paperjjk_client.util.WorldToScreenUtil;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -51,6 +52,9 @@ public class GameRendererMixin {
     private static final Identifier MIZUSHI_DUST_STORM_EFFECT_ID =
         Identifier.of("paperjjk-client", "mizushi_dust_storm");
 
+    private static final Identifier MIZUSHI_CHARGE_EFFECT_ID =
+        Identifier.of("paperjjk-client", "mizushi_charge");
+
     /**
      * Apply refraction post-processing BEFORE the HUD renders.
      * This ensures the crosshair, health bar, hotbar etc. are NOT distorted.
@@ -78,7 +82,8 @@ public class GameRendererMixin {
         if (effects.isEmpty() && !DomainEffectManager.hasActiveDomains()
                 && !KaiSlashEffectManager.isAnyActive()
                 && !HachiSlashEffectManager.hasActiveEffects()
-                && !AmbientKaiSlashManager.isActive()) return;
+                && !AmbientKaiSlashManager.isActive()
+                && !MizushiChargeEffectManager.isActive()) return;
 
         Camera camera = client.gameRenderer.getCamera();
         // Use the actual dynamic FOV (includes sprint/fly/speed effect/bow draw modifiers)
@@ -231,8 +236,52 @@ public class GameRendererMixin {
             }
         }
 
+        // ── Mizushi Charge Effect (결없영 2초 충전 애니메이션) ───────────────────
+        if (MizushiChargeEffectManager.isActive()) {
+            float chargeProgress = MizushiChargeEffectManager.getProgress();
+            float sphereRadius   = MizushiChargeEffectManager.getSphereRadius();
+            float chargeTime     = (float)(System.currentTimeMillis() % 100000L) / 1000.0f;
+
+            Vec3d chargeHeadWorld = MizushiChargeEffectManager.getWorldCenter();
+            Vec3d camPos3 = ((CameraAccessor) camera).getPos();
+            float headRelX = (float)(chargeHeadWorld.x - camPos3.x);
+            float headRelY = (float)(chargeHeadWorld.y - camPos3.y);
+            float headRelZ = (float)(chargeHeadWorld.z - camPos3.z);
+
+            // Project head to screen UV (for spike center) + NDC depth (for occlusion)
+            Vec3d headScreen = WorldToScreenUtil.worldToScreen(chargeHeadWorld, camera, projectionMatrix);
+            float headUVX   = headScreen == null ? -1.0f : (float) headScreen.x;
+            float headUVY   = headScreen == null ? -1.0f : 1.0f - (float) headScreen.y; // flip Y
+            float headDepth = headScreen == null ? -1.0f
+                : WorldToScreenUtil.worldToDepth(chargeHeadWorld, camera, projectionMatrix);
+
+            Matrix4f chargeViewMatrix = new Matrix4f()
+                .rotation(camera.getRotation().conjugate(new Quaternionf()));
+            Matrix4f chargeInvViewProj = projectionMatrix
+                .mul(chargeViewMatrix, new Matrix4f())
+                .invert(new Matrix4f());
+
+            PostEffectProcessor chargeProcessor;
+            try {
+                chargeProcessor = client.getShaderLoader().loadPostEffect(
+                    MIZUSHI_CHARGE_EFFECT_ID,
+                    Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN)
+                );
+            } catch (Exception e) {
+                System.err.println("[JJKMixin] Failed to load mizushi_charge post effect: " + e.getMessage());
+                chargeProcessor = null;
+            }
+            if (chargeProcessor != null) {
+                updateChargeUniforms(chargeProcessor, chargeInvViewProj,
+                    headRelX, headRelY, headRelZ, chargeProgress,
+                    headUVX, headUVY, headDepth, chargeTime);
+                chargeProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
+            }
+        }
+
         // ── Ambient Kai Slash (결없영 배경 참격) — screen-space 2D, 단일 pass ──
-        if (AmbientKaiSlashManager.isActive()) {
+        // smoothRadius > 0 조건: 충전 2초 딜레이 중에는 서버에서 radius=0 이 오므로 렌더 안 함
+        if (AmbientKaiSlashManager.isActive() && AmbientKaiSlashManager.smoothRadius > 0f) {
             // 카메라 위치를 슬래시 배치 계산에 활용하도록 매 프레임 업데이트
             AmbientKaiSlashManager.cameraPos = ((CameraAccessor) camera).getPos();
             // Dead reckoning: smoothRadius 갱신 (프레임 델타 ms 기준)
@@ -847,6 +896,73 @@ public class GameRendererMixin {
                 .writeToBuffer(buf.slice(), rawBuf);
         } catch (Exception e) {
             System.err.println("[JJKMixin] updateAmbientKaiUniforms failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Updates the ChargeConfig uniform buffer.
+     *
+     * std140 layout:
+     *   vec4 InvViewProjC0..C3  → 4 × 16 = 64 bytes
+     *   vec4 CasterHeadRel      → 16 bytes  (xyz = cam-relative head, w = progress)
+     *   vec4 ScreenParams       → 16 bytes  (xy = head UV, z = sphere radius, w = time)
+     *   Total                   = 96 bytes
+     */
+    @SuppressWarnings("unchecked")
+    private void updateChargeUniforms(PostEffectProcessor processor,
+                                       Matrix4f invViewProj,
+                                       float headX, float headY, float headZ,
+                                       float progress,
+                                       float headUVX, float headUVY,
+                                       float headDepth, float time) {
+        try {
+            java.lang.reflect.Field passesField = null;
+            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
+                if (java.util.List.class.isAssignableFrom(f.getType())) { passesField = f; break; }
+            }
+            if (passesField == null) return;
+            passesField.setAccessible(true);
+            List<?> passes = (List<?>) passesField.get(processor);
+            if (passes.isEmpty()) return;
+            Object firstPass = passes.get(0);
+
+            java.lang.reflect.Field ubField = null;
+            for (java.lang.reflect.Field f : firstPass.getClass().getDeclaredFields()) {
+                if (java.util.Map.class.isAssignableFrom(f.getType())) { ubField = f; break; }
+            }
+            if (ubField == null) return;
+            ubField.setAccessible(true);
+            java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> ubs =
+                (java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>) ubField.get(firstPass);
+
+            com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("ChargeConfig");
+            if (buf == null) return;
+
+            if ((buf.usage() & 8) == 0 || buf.size() < 96) {
+                buf.close();
+                com.mojang.blaze3d.buffers.GpuBuffer newBuf =
+                    RenderSystem.getDevice().createBuffer(() -> "JJK ChargeConfig", 8 | 128, 96);
+                ubs.put("ChargeConfig", newBuf);
+                buf = newBuf;
+            }
+
+            org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush();
+            try {
+                com.mojang.blaze3d.buffers.Std140Builder b =
+                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 96);
+                b.putVec4(invViewProj.m00(), invViewProj.m01(), invViewProj.m02(), invViewProj.m03());
+                b.putVec4(invViewProj.m10(), invViewProj.m11(), invViewProj.m12(), invViewProj.m13());
+                b.putVec4(invViewProj.m20(), invViewProj.m21(), invViewProj.m22(), invViewProj.m23());
+                b.putVec4(invViewProj.m30(), invViewProj.m31(), invViewProj.m32(), invViewProj.m33());
+                b.putVec4(headX, headY, headZ, progress);
+                b.putVec4(headUVX, headUVY, headDepth, time);
+                RenderSystem.getDevice().createCommandEncoder()
+                    .writeToBuffer(buf.slice(), b.get());
+            } finally {
+                stack.pop();
+            }
+        } catch (Exception e) {
+            System.err.println("[JJKMixin] updateChargeUniforms failed: " + e.getMessage());
         }
     }
 
