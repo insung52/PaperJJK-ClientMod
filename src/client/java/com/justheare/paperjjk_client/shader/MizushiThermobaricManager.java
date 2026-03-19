@@ -1,6 +1,13 @@
 package com.justheare.paperjjk_client.shader;
 
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.sound.PositionedSoundInstance;
+import net.minecraft.registry.Registries;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvent;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.math.random.Random;
 
 /**
  * 미즈시 열압력탄 폭발 시각 효과 매니저.
@@ -26,6 +33,7 @@ public class MizushiThermobaricManager {
     private static long    startMs         = 0L;
     private static float   shockwaveReach  = 0f;
     private static float   totalDurationMs = 0f;
+    private static boolean soundPlayed     = false;
 
     // ── API ──────────────────────────────────────────────────────────────────
 
@@ -36,9 +44,84 @@ public class MizushiThermobaricManager {
         totalDurationMs = 4000f + radius * 20f;
         startMs         = System.currentTimeMillis();
         active          = true;
+        soundPlayed     = false;
     }
 
     public static void stop() { active = false; }
+
+    /**
+     * 충격파가 플레이어 위치에 도달하는 순간 소리 재생 (1회).
+     * 렌더 루프에서 매 프레임 호출; soundPlayed 플래그로 중복 방지.
+     *
+     * 거리별 도달 범위: effectRadius × 20 블록 (200 반경 → 4000 블록).
+     *
+     * 소리 목록:
+     *   - lightning_bolt.thunder  pitch 0.5 & 1.2  → 폭발 원점에서 재생 (MC 거리 감쇠)
+     *   - end_portal.spawn        pitch 0.5         → 플레이어 위치에서 재생, 볼륨 직접 계산
+     *     (end_portal.spawn 은 방향감 없고 거리 감쇠 없는 ambient 스타일이므로
+     *      플레이어 위치에서 재생 + 수동 선형 감쇠로 처리)
+     */
+    public static void tickSound(MinecraftClient client) {
+        if (!active || soundPlayed) return;
+        if (client.player == null) return;
+
+        double px = client.player.getX();
+        double py = client.player.getY();
+        double pz = client.player.getZ();
+        double distance = Math.sqrt((px - center.x) * (px - center.x)
+                                  + (py - center.y) * (py - center.y)
+                                  + (pz - center.z) * (pz - center.z));
+
+        // 소리 도달 타이밍: 시각 충격파(shockwaveReach로 시각 효과 멈춤)와 분리.
+        // 동일한 SHOCKWAVE_SPEED 사용하되, 최대 도달 범위(soundRange)까지만 전파.
+        // 200 반경 기준 4000블럭 → soundRange = effectRadius × 20
+        float soundRange    = effectRadius * 20f;
+        float soundArrivalMs = (float)(distance / SHOCKWAVE_SPEED); // distance/speed = 도달까지 걸리는 ms
+        float elapsedMs      = (float)(System.currentTimeMillis() - startMs);
+
+        // 아직 도달 안 했거나 범위 초과
+        if (elapsedMs < soundArrivalMs || distance > soundRange) return;
+
+        soundPlayed = true;
+
+        // MC: audible range = volume × 16  →  volume = soundRange / 16
+        float posVolume = soundRange / 16f;
+
+        var sm     = client.getSoundManager();
+        var random = Random.create();
+
+        // SoundEvent를 Identifier로 직접 조회 (Yarn 버전별 필드명 차이 회피)
+        var thunderOpt    = Registries.SOUND_EVENT.getEntry(Identifier.of("entity.lightning_bolt.thunder"));
+        var endPortalOpt  = Registries.SOUND_EVENT.getEntry(Identifier.of("block.end_portal.spawn"));
+
+        // ── 1 & 2. thunder pitch 0.5 / 1.2 — 폭발 원점에서 재생 ─────────────
+        if (thunderOpt.isPresent()) {
+            SoundEvent thunder = thunderOpt.get().value();
+            sm.play(new PositionedSoundInstance(
+                    thunder, SoundCategory.MASTER,
+                    posVolume, 0.5f, random,
+                    center.x, center.y, center.z
+            ));
+            sm.play(new PositionedSoundInstance(
+                    thunder, SoundCategory.MASTER,
+                    posVolume, 1.2f, random,
+                    center.x, center.y, center.z
+            ));
+        }
+
+        // ── 3. end_portal.spawn — 플레이어 위치에서 재생, 볼륨 수동 계산 ─────
+        // distance=0 이므로 MC 추가 감쇠 없음 → manualVolume 이 유일한 감쇠
+        if (endPortalOpt.isPresent()) {
+            float manualVolume = Math.max(0f, 1f - (float)(distance / soundRange));
+            if (manualVolume > 0.001f) {
+                sm.play(new PositionedSoundInstance(
+                        endPortalOpt.get().value(), SoundCategory.MASTER,
+                        manualVolume, 0.5f, random,
+                        px, py, pz
+                ));
+            }
+        }
+    }
 
     public static boolean isActive() {
         if (!active) return false;

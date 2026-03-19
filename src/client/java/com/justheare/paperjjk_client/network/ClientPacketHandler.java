@@ -184,16 +184,48 @@ public class ClientPacketHandler {
                 long uuidLeast = buf.readLong();
                 java.util.UUID domainId = new java.util.UUID(uuidMost, uuidLeast);
                 float serverRadius = buf.readFloat();
+                int domainType = buf.readInt();
+                double centerX = buf.readDouble();
+                double centerY = buf.readDouble();
+                double centerZ = buf.readDouble();
+                boolean isOpen = buf.readBoolean();
 
                 client.execute(() -> {
-                    ClientGameData.syncDomain(domainId, serverRadius);
-                    // MIZUSHI 결없영(isOpen=true)만 반경 동기화
-                    ClientGameData.ActiveDomain d = ClientGameData.getDomain(domainId);
-                    if (d != null && d.domainType == PacketIds.DomainType.MIZUSHI && d.isOpen) {
-                        com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
-                            .syncDomainRadius(domainId, serverRadius);
+                    ClientGameData.ActiveDomain existing = ClientGameData.getDomain(domainId);
+                    if (existing == null) {
+                        // START를 놓친 플레이어 복구 — SYNC만으로 도메인 생성
+                        ClientGameData.ActiveDomain domain = new ClientGameData.ActiveDomain();
+                        domain.domainId = domainId;
+                        domain.center = new net.minecraft.util.math.Vec3d(centerX, centerY, centerZ);
+                        domain.maxRadius = serverRadius;
+                        domain.domainType = domainType;
+                        domain.isOpen = isOpen;
+                        domain.lastSyncTime = System.currentTimeMillis();
+                        domain.color = 0;
+                        domain.serverRadius = serverRadius;
+                        domain.currentRadius = 0.0f;
+                        // ~1초 내 현재 반경 추격 (20틱)
+                        domain.expansionSpeed = serverRadius > 0f ? serverRadius / 20f : 0f;
+                        domain.isExpanding = serverRadius > 0f;
+                        ClientGameData.addDomain(domainId, domain);
+
+                        if (domainType == PacketIds.DomainType.MIZUSHI && isOpen) {
+                            net.minecraft.util.math.Vec3d center =
+                                new net.minecraft.util.math.Vec3d(centerX, centerY, centerZ);
+                            // 충전 애니메이션 없음 — 이미 진행 중인 도메인 복구
+                            com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
+                                .setDomain(domainId, center, serverRadius);
+                        }
+                        LOGGER.info("[Domain Visual] SYNC → domain created (recovery): id={}, radius={}", domainId, serverRadius);
+                    } else {
+                        // 기존 도메인 동기화
+                        ClientGameData.syncDomain(domainId, serverRadius);
+                        if (existing.domainType == PacketIds.DomainType.MIZUSHI && existing.isOpen) {
+                            com.justheare.paperjjk_client.shader.AmbientKaiSlashManager
+                                .syncDomainRadius(domainId, serverRadius);
+                        }
+                        LOGGER.debug("[Domain Visual] SYNC: id={}, radius={}", domainId, serverRadius);
                     }
-                    LOGGER.debug("[Domain Visual] SYNC: id={}, radius={}", domainId, serverRadius);
                 });
             }
 

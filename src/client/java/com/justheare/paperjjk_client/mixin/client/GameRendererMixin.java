@@ -457,6 +457,8 @@ public class GameRendererMixin {
 
         // ── Mizushi Thermobaric Explosion ─────────────────────────────────────
         if (MizushiThermobaricManager.isActive()) {
+            // 충격파 도달 시 소리 재생 (1회, 렌더 루프에서 체크)
+            MizushiThermobaricManager.tickSound(client);
             Matrix4f thermoViewMatrix = new Matrix4f()
                 .rotation(camera.getRotation().conjugate(new Quaternionf()));
             Matrix4f thermoInvViewProj = projectionMatrix
