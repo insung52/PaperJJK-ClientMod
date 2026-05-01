@@ -47,12 +47,18 @@ void main() {
     float tailFade = smoothstep(tailT, tailT + softW, along_t);
     float lenFactor = headFade * tailFade;
 
-    // ── 코어 · bloom 계산 (lenFactor 마지막에 적용) ──────────────────────
+    // bloom 범위 밖이면 원본 그대로 출력
+    if (perp_dist > CoreHalfWidth + BloomWidth) {
+        fragColor = texture(InSampler, texCoord);
+        return;
+    }
+
     // ── Depth 테스트: 슬래시가 geometry 뒤에 있으면 스킵 ─────────────────────
     float slashDepth = mix(Depth1, Depth2, along_t);
     float worldDepth = texture(DepthSampler, texCoord).r;
+    vec4 orig = texture(InSampler, texCoord);
     if (slashDepth > worldDepth) {
-        fragColor = texture(InSampler, texCoord);
+        fragColor = orig;
         return;
     }
 
@@ -64,7 +70,6 @@ void main() {
     float inCore    = inCore_raw * lenFactor;
     float bloomFact = bloomRaw   * lenFactor;
 
-    vec4 orig   = texture(InSampler, texCoord);
     vec4 result = orig;
 
     // 검은 코어 (원본 덮어쓰기)

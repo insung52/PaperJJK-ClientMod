@@ -40,7 +40,7 @@ float vNoise(vec3 p) {
 
 float fbm(vec3 p) {
     float v = 0.0, a = 0.5;
-    for (int i = 0; i < 4; i++) { v += a * vNoise(p); p *= 2.0; a *= 0.5; }
+    for (int i = 0; i < 3; i++) { v += a * vNoise(p); p *= 2.0; a *= 0.5; }
     return v;
 }
 
@@ -87,9 +87,14 @@ void main() {
 
     float depth   = texture(DepthSampler, texCoord).r;
     bool  isSky   = depth >= 0.9999;
-    vec4  ndcD    = vec4(texCoord * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
-    vec4  wp4     = invVP * ndcD;
-    float pixDist = isSky ? 1e10 : length(wp4.xyz / wp4.w);
+    // pixDist: sky=무한, 그 외 실제 geometry 거리
+    float pixDist;
+    if (isSky) {
+        pixDist = 1e10;
+    } else {
+        vec4 wp4 = invVP * vec4(texCoord * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+        pixDist  = length(wp4.xyz / wp4.w);
+    }
 
     vec3  cen = CenterRel.xyz;
 

@@ -91,30 +91,33 @@ void main() {
     }
 
     float baseFog = clamp(0.1 + insideLen / 120.0, 0.0, 1.0);
+    float fogAlpha = baseFog * Alpha;
+    if (fogAlpha < 0.002) {
+        fragColor = vec4(0.0);
+        return;
+    }
 
     float n1 = dirNoise(rd,  5.0, vec2(0.0,        Time * 3.6));
     float n2 = dirNoise(rd, 12.0, vec2(Time * 2.8, Time * 1.8));
     float turbulence = mix(n1, n2, 0.5);
     float blobIntensity = (1.0 - turbulence) * baseFog * 0.75;
 
-    float frameTime = floor(Time * 60.0);
-
-    // fog 색상: 회색 ↔ 검붉은 얼룩 (scene 의존 없음 — apply 패스에서 blending)
+    // fog 색상: 회색 ↔ 검붉은 얼룩
     vec3 fogColor = mix(vec3(0.20, 0.20, 0.20), vec3(0.25, 0.03, 0.03), blobIntensity);
 
-    // TV 정적 노이즈
+    // TV 정적 노이즈 — 카메라가 영역 안에 있을 때만 표시
     float camDistFromCenter = length(DomainCenter.xyz);
-    float distOutside  = max(0.0, camDistFromCenter - DomainRadius);
-    float staticFade   = 1.0 - clamp(distOutside / 20.0, 0.0, 1.0);
-
-    float staticHash  = hash(vec2(texCoord.x * 1920.0 + frameTime * 13.7,
-                                  texCoord.y * 1080.0 + frameTime *  9.3));
-    float staticAlpha = step(0.99, staticHash)
-                      * (0.5 + hash(vec2(staticHash + frameTime, texCoord.x + texCoord.y)) * 0.5)
-                      * staticFade;
-    fogColor = mix(fogColor, vec3(1.0), staticAlpha * baseFog);
+    float staticFade = 1.0 - clamp((camDistFromCenter - DomainRadius) / 20.0, 0.0, 1.0);
+    if (staticFade > 0.002) {
+        float frameTime   = floor(Time * 60.0);
+        float staticHash  = hash(vec2(texCoord.x * 1920.0 + frameTime * 13.7,
+                                      texCoord.y * 1080.0 + frameTime *  9.3));
+        float staticAlpha = step(0.99, staticHash)
+                          * (0.5 + hash(vec2(staticHash + frameTime, texCoord.x + texCoord.y)) * 0.5)
+                          * staticFade;
+        fogColor = mix(fogColor, vec3(1.0), staticAlpha * baseFog);
+    }
 
     // 출력: fog 색상 + 블렌딩 alpha
-    // apply 패스에서: mix(scene, fogColor, fogAlpha)
-    fragColor = vec4(fogColor, baseFog * Alpha);
+    fragColor = vec4(fogColor, fogAlpha);
 }

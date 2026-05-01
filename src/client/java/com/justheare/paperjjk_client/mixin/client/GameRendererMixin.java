@@ -35,6 +35,14 @@ import java.util.Set;
 @Mixin(GameRenderer.class)
 public class GameRendererMixin {
 
+    /** Reflection 캐시 — 매 프레임 getDeclaredFields() 반복 방지 */
+    @org.spongepowered.asm.mixin.Unique
+    private static java.lang.reflect.Field cachedPassesField = null;
+    @org.spongepowered.asm.mixin.Unique
+    private static java.lang.reflect.Field cachedUbField = null;
+    @org.spongepowered.asm.mixin.Unique
+    private static Class<?> cachedPassClass = null;
+
     private static final Identifier REFRACTION_EFFECT_ID =
         Identifier.of("paperjjk-client", "refraction");
 
@@ -58,6 +66,43 @@ public class GameRendererMixin {
 
     private static final Identifier MIZUSHI_SHOCKWAVE_EFFECT_ID =
         Identifier.of("paperjjk-client", "mizushi_shockwave");
+
+    /**
+     * PostEffectProcessor의 첫 번째 pass에서 uniformBuffers Map을 반환.
+     * reflection 결과를 클래스 레벨에 캐싱하여 매 프레임 getDeclaredFields() 반복을 방지.
+     */
+    @SuppressWarnings("unchecked")
+    @org.spongepowered.asm.mixin.Unique
+    private static java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>
+            getUniformBuffers(PostEffectProcessor processor) throws Exception {
+        if (cachedPassesField == null) {
+            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
+                if (java.util.List.class.isAssignableFrom(f.getType())) {
+                    f.setAccessible(true);
+                    cachedPassesField = f;
+                    break;
+                }
+            }
+        }
+        if (cachedPassesField == null) return null;
+        java.util.List<?> passes = (java.util.List<?>) cachedPassesField.get(processor);
+        if (passes.isEmpty()) return null;
+        Object firstPass = passes.get(0);
+
+        if (cachedUbField == null || cachedPassClass != firstPass.getClass()) {
+            cachedPassClass = firstPass.getClass();
+            cachedUbField = null;
+            for (java.lang.reflect.Field f : cachedPassClass.getDeclaredFields()) {
+                if (java.util.Map.class.isAssignableFrom(f.getType())) {
+                    f.setAccessible(true);
+                    cachedUbField = f;
+                    break;
+                }
+            }
+        }
+        if (cachedUbField == null) return null;
+        return (java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>) cachedUbField.get(firstPass);
+    }
 
     /** Framebuffer 인스턴스에서 GL FBO ID(int)를 reflection으로 추출. */
     @org.spongepowered.asm.mixin.Unique
@@ -561,30 +606,9 @@ public class GameRendererMixin {
                                            int effectType, float effectDepth,
                                            float time, float worldDist) {
         try {
-            java.lang.reflect.Field passesField = null;
-            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
-                if (java.util.List.class.isAssignableFrom(f.getType())) {
-                    passesField = f;
-                    break;
-                }
-            }
-            if (passesField == null) return;
-            passesField.setAccessible(true);
-            List<?> passes = (List<?>) passesField.get(processor);
-            if (passes.isEmpty()) return;
-            Object firstPass = passes.get(0);
-
-            java.lang.reflect.Field uniformBuffersField = null;
-            for (java.lang.reflect.Field f : firstPass.getClass().getDeclaredFields()) {
-                if (java.util.Map.class.isAssignableFrom(f.getType())) {
-                    uniformBuffersField = f;
-                    break;
-                }
-            }
-            if (uniformBuffersField == null) return;
-            uniformBuffersField.setAccessible(true);
             java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> uniformBuffers =
-                (java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>) uniformBuffersField.get(firstPass);
+                getUniformBuffers(processor);
+            if (uniformBuffers == null) return;
 
             com.mojang.blaze3d.buffers.GpuBuffer buf = uniformBuffers.get("RefractionConfig");
             if (buf == null) return;
@@ -642,24 +666,9 @@ public class GameRendererMixin {
                                          float alpha, float time,
                                          float depth1, float depth2) {
         try {
-            java.lang.reflect.Field passesField = null;
-            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
-                if (java.util.List.class.isAssignableFrom(f.getType())) { passesField = f; break; }
-            }
-            if (passesField == null) return;
-            passesField.setAccessible(true);
-            List<?> passes = (List<?>) passesField.get(processor);
-            if (passes.isEmpty()) return;
-            Object firstPass = passes.get(0);
-
-            java.lang.reflect.Field ubField = null;
-            for (java.lang.reflect.Field f : firstPass.getClass().getDeclaredFields()) {
-                if (java.util.Map.class.isAssignableFrom(f.getType())) { ubField = f; break; }
-            }
-            if (ubField == null) return;
-            ubField.setAccessible(true);
             java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> ubs =
-                (java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>) ubField.get(firstPass);
+                getUniformBuffers(processor);
+            if (ubs == null) return;
 
             com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("KaiSlashConfig");
             if (buf == null) return;
@@ -710,24 +719,9 @@ public class GameRendererMixin {
                                        List<HachiSlashEffectManager.HachiSlashEffect> effects,
                                        Camera camera, Matrix4f projectionMatrix) {
         try {
-            java.lang.reflect.Field passesField = null;
-            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
-                if (java.util.List.class.isAssignableFrom(f.getType())) { passesField = f; break; }
-            }
-            if (passesField == null) return;
-            passesField.setAccessible(true);
-            List<?> passes = (List<?>) passesField.get(processor);
-            if (passes.isEmpty()) return;
-            Object firstPass = passes.get(0);
-
-            java.lang.reflect.Field ubField = null;
-            for (java.lang.reflect.Field f : firstPass.getClass().getDeclaredFields()) {
-                if (java.util.Map.class.isAssignableFrom(f.getType())) { ubField = f; break; }
-            }
-            if (ubField == null) return;
-            ubField.setAccessible(true);
             java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> ubs =
-                (java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>) ubField.get(firstPass);
+                getUniformBuffers(processor);
+            if (ubs == null) return;
 
             com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("HachiSlashConfig");
             if (buf == null) return;
@@ -822,24 +816,9 @@ public class GameRendererMixin {
                                           float domCX, float domCY, float domCZ,
                                           float domRadius, float time, float alpha) {
         try {
-            java.lang.reflect.Field passesField = null;
-            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
-                if (java.util.List.class.isAssignableFrom(f.getType())) { passesField = f; break; }
-            }
-            if (passesField == null) return;
-            passesField.setAccessible(true);
-            List<?> passes = (List<?>) passesField.get(processor);
-            if (passes.isEmpty()) return;
-            Object firstPass = passes.get(0);
-
-            java.lang.reflect.Field ubField = null;
-            for (java.lang.reflect.Field f : firstPass.getClass().getDeclaredFields()) {
-                if (java.util.Map.class.isAssignableFrom(f.getType())) { ubField = f; break; }
-            }
-            if (ubField == null) return;
-            ubField.setAccessible(true);
             java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> ubs =
-                (java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>) ubField.get(firstPass);
+                getUniformBuffers(processor);
+            if (ubs == null) return;
 
             com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("DustStormConfig");
             if (buf == null) return;
@@ -920,24 +899,9 @@ public class GameRendererMixin {
                                        float casterX, float casterY, float casterZ,
                                        float expandRadius, float darkRadius, float darknessLevel) {
         try {
-            java.lang.reflect.Field passesField = null;
-            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
-                if (java.util.List.class.isAssignableFrom(f.getType())) { passesField = f; break; }
-            }
-            if (passesField == null) return;
-            passesField.setAccessible(true);
-            List<?> passes = (List<?>) passesField.get(processor);
-            if (passes.isEmpty()) return;
-            Object firstPass = passes.get(0);
-
-            java.lang.reflect.Field ubField = null;
-            for (java.lang.reflect.Field f : firstPass.getClass().getDeclaredFields()) {
-                if (java.util.Map.class.isAssignableFrom(f.getType())) { ubField = f; break; }
-            }
-            if (ubField == null) return;
-            ubField.setAccessible(true);
             java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> ubs =
-                (java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>) ubField.get(firstPass);
+                getUniformBuffers(processor);
+            if (ubs == null) return;
 
             com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("DomainConfig");
             if (buf == null) return;
@@ -996,24 +960,9 @@ public class GameRendererMixin {
     private void updateAmbientKaiUniforms(PostEffectProcessor processor,
                                            int slashCount, float[] slashData) {
         try {
-            java.lang.reflect.Field passesField = null;
-            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
-                if (java.util.List.class.isAssignableFrom(f.getType())) { passesField = f; break; }
-            }
-            if (passesField == null) return;
-            passesField.setAccessible(true);
-            List<?> passes = (List<?>) passesField.get(processor);
-            if (passes.isEmpty()) return;
-            Object firstPass = passes.get(0);
-
-            java.lang.reflect.Field ubField = null;
-            for (java.lang.reflect.Field f : firstPass.getClass().getDeclaredFields()) {
-                if (java.util.Map.class.isAssignableFrom(f.getType())) { ubField = f; break; }
-            }
-            if (ubField == null) return;
-            ubField.setAccessible(true);
             java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> ubs =
-                (java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>) ubField.get(firstPass);
+                getUniformBuffers(processor);
+            if (ubs == null) return;
 
             com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("AmbientKaiConfig");
             if (buf == null) return;
@@ -1026,9 +975,12 @@ public class GameRendererMixin {
                     RenderSystem.getDevice().createBuffer(() -> "JJK AmbientKaiConfig", 8 | 128, REQUIRED);
                 java.util.HashMap<String, com.mojang.blaze3d.buffers.GpuBuffer> newMap = new java.util.HashMap<>(ubs);
                 newMap.put("AmbientKaiConfig", newBuf);
-                ubField.set(firstPass, newMap);
+                // cachedUbField와 cachedPassClass가 이미 설정된 상태이므로 직접 재활용
+                List<?> passes = (List<?>) cachedPassesField.get(processor);
+                cachedUbField.set(passes.get(0), newMap);
                 buf.close();
                 buf = newBuf;
+                ubs = newMap;
             }
 
             // MemoryStack 대신 direct ByteBuffer 사용
@@ -1083,24 +1035,9 @@ public class GameRendererMixin {
                                        float headUVX, float headUVY,
                                        float headDepth, float time) {
         try {
-            java.lang.reflect.Field passesField = null;
-            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
-                if (java.util.List.class.isAssignableFrom(f.getType())) { passesField = f; break; }
-            }
-            if (passesField == null) return;
-            passesField.setAccessible(true);
-            List<?> passes = (List<?>) passesField.get(processor);
-            if (passes.isEmpty()) return;
-            Object firstPass = passes.get(0);
-
-            java.lang.reflect.Field ubField = null;
-            for (java.lang.reflect.Field f : firstPass.getClass().getDeclaredFields()) {
-                if (java.util.Map.class.isAssignableFrom(f.getType())) { ubField = f; break; }
-            }
-            if (ubField == null) return;
-            ubField.setAccessible(true);
             java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> ubs =
-                (java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>) ubField.get(firstPass);
+                getUniformBuffers(processor);
+            if (ubs == null) return;
 
             com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("ChargeConfig");
             if (buf == null) return;
@@ -1148,24 +1085,9 @@ public class GameRendererMixin {
                                           float swStrength, float vaporAlpha,
                                           float dustAlpha, float effectRadius) {
         try {
-            java.lang.reflect.Field passesField = null;
-            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
-                if (java.util.List.class.isAssignableFrom(f.getType())) { passesField = f; break; }
-            }
-            if (passesField == null) return;
-            passesField.setAccessible(true);
-            List<?> passes = (List<?>) passesField.get(processor);
-            if (passes.isEmpty()) return;
-            Object firstPass = passes.get(0);
-
-            java.lang.reflect.Field ubField = null;
-            for (java.lang.reflect.Field f : firstPass.getClass().getDeclaredFields()) {
-                if (java.util.Map.class.isAssignableFrom(f.getType())) { ubField = f; break; }
-            }
-            if (ubField == null) return;
-            ubField.setAccessible(true);
             java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> ubs =
-                (java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>) ubField.get(firstPass);
+                getUniformBuffers(processor);
+            if (ubs == null) return;
 
             com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("ShockwaveConfig");
             if (buf == null) return;
@@ -1219,24 +1141,9 @@ public class GameRendererMixin {
                                             float screenU, float screenV,
                                             float effectRadius, float riseAmount) {
         try {
-            java.lang.reflect.Field passesField = null;
-            for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
-                if (java.util.List.class.isAssignableFrom(f.getType())) { passesField = f; break; }
-            }
-            if (passesField == null) return;
-            passesField.setAccessible(true);
-            List<?> passes = (List<?>) passesField.get(processor);
-            if (passes.isEmpty()) return;
-            Object firstPass = passes.get(0);
-
-            java.lang.reflect.Field ubField = null;
-            for (java.lang.reflect.Field f : firstPass.getClass().getDeclaredFields()) {
-                if (java.util.Map.class.isAssignableFrom(f.getType())) { ubField = f; break; }
-            }
-            if (ubField == null) return;
-            ubField.setAccessible(true);
             java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> ubs =
-                (java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer>) ubField.get(firstPass);
+                getUniformBuffers(processor);
+            if (ubs == null) return;
 
             com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("ThermobaricConfig");
             if (buf == null) return;

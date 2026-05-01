@@ -66,22 +66,26 @@ void main() {
 
         // ── 거리 기반 두께 스케일 ────────────────────────────────────────────
         float coreW  = CoreHalfWidth * distScale;
-        float bloomW = BloomWidth    * distScale;
 
-        // Kai 스타일 애니메이션 (camDist fog 곱하여 거리 페이드 적용)
+        // 코어 바깥이면 bloom 범위인지 먼저 확인 — 멀면 바로 건너뜀
+        float bloomW = BloomWidth * distScale;
+        if (d > coreW + bloomW) continue;
+
+        // Kai 스타일 애니메이션
         float headFade  = 1.0 - smoothstep(headT - SOFT_W, headT, along_t);
         float tailFade  = smoothstep(tailT, tailT + SOFT_W, along_t);
         float lenFactor = headFade * tailFade * fade * distFog;
+        if (lenFactor < 0.002) continue;
 
         // 코어 + bloom
         float inCore_raw = step(d, coreW);
         float inCore     = inCore_raw * lenFactor;
 
+        accumCore = max(accumCore, inCore);
+        if (accumCore >= 1.0) break;
+
         float bloomT = 1.0 - smoothstep(coreW, coreW + bloomW, d);
         float bloom  = bloomT * bloomT * (1.0 - inCore_raw) * lenFactor;
-
-        accumCore  = max(accumCore, inCore);
-        if (accumCore >= 1.0) break;
         accumBloom += bloom;
     }
 

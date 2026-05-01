@@ -75,10 +75,16 @@ void main() {
 
     float depth    = texture(DepthSampler, texCoord).r;
     bool  isSky    = depth >= 0.9999;
-    vec4  ndcD     = vec4(texCoord * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
-    vec4  wp4      = invVP * ndcD;
-    vec3  worldPos = wp4.xyz / wp4.w;
-    float pixDist  = isSky ? 1e10 : length(worldPos);
+    vec3  worldPos;
+    float pixDist;
+    if (isSky) {
+        worldPos = vec3(0.0);
+        pixDist  = 1e10;
+    } else {
+        vec4 wp4 = invVP * vec4(texCoord * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+        worldPos = wp4.xyz / wp4.w;
+        pixDist  = length(worldPos);
+    }
 
     vec3  cen    = CenterRel.xyz;
     vec4  orig   = texture(InSampler, texCoord);
