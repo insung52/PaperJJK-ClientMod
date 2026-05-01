@@ -15,31 +15,52 @@ layout(std140) uniform DustStormConfig {
     float _pad1;
 };
 
+// 사전 계산된 64×64 seamless noise corner 값 테이블.
+// vec4 에 4개씩 패킹 — 1024 × 16 bytes = 16384 bytes (std140).
+// lookupCorner(x, y) = Noise[(y*64+x) >> 2][(y*64+x) & 3]
+// & 63 으로 2^6 타일링 (seamless)
+layout(std140) uniform NoiseTable {
+    vec4 Noise[1024];
+};
+
 in vec2 texCoord;
 out vec4 fragColor;
 
+// TV 정적 노이즈는 고주파 랜덤 패턴이 필요하므로 hash 함수 유지
 float hash(vec2 p) {
     p = fract(p * vec2(0.1031, 0.1030));
     p += dot(p, p.yx + 19.19);
     return fract((p.x + p.y) * p.x);
 }
 
-// 두 번 거쳐 패턴 완전 파괴 — TV 정적 노이즈용
 float hash2(vec2 p) {
     return hash(vec2(hash(p) * 7321.9, hash(p.yx) * 3917.5));
 }
 
-float vNoise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    return mix(mix(hash(i),             hash(i + vec2(1.0, 0.0)), f.x),
-               mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+// 사전 계산된 테이블에서 (x, y) corner 값 조회
+// & 63 = bitwise modulo 64 (x < 0 포함, 두의 보수상 올바름)
+float lookupCorner(int x, int y) {
+    int idx = (y & 63) * 64 + (x & 63);
+    return Noise[idx >> 2][idx & 3];
+}
+
+// hash+vNoise 연산(ALU 16회) → 테이블 조회 + bilinear 보간 (메모리 4회)
+float tableNoise(vec2 p) {
+    vec2  uv = p * 64.0;
+    ivec2 i  = ivec2(floor(uv));
+    vec2  f  = fract(uv);
+    f = f * f * (3.0 - 2.0 * f); // smoothstep
+    return mix(
+        mix(lookupCorner(i.x,     i.y    ),
+            lookupCorner(i.x + 1, i.y    ), f.x),
+        mix(lookupCorner(i.x,     i.y + 1),
+            lookupCorner(i.x + 1, i.y + 1), f.x),
+        f.y);
 }
 
 float dirNoise(vec3 rd, float scale, vec2 timeOffset) {
-    float a = vNoise(rd.xy * scale + timeOffset);
-    float b = vNoise(rd.yz * scale + timeOffset.yx);
+    float a = tableNoise(rd.xy * scale + timeOffset);
+    float b = tableNoise(rd.yz * scale + timeOffset.yx);
     return mix(a, b, 0.5);
 }
 
@@ -85,40 +106,36 @@ void main() {
 
     vec4 orig = texture(InSampler, texCoord);
 
-    // ── 1. 기본 Fog — 거리 비례 회색, 플레이어 위치 10% 시작, 70m 에서 100% ──
+    // ── 1. 기본 Fog — 거리 비례 회색 ─────────────────────────────────────────
     float baseFog = clamp(0.1 + insideLen / 120.0, 0.0, 1.0);
 
-    // ── 2. 얼룩 Fog — rd 기반 검은 얼룩, 기본 fog 위에 추가 ──────────────────
+    // ── 2. 얼룩 Fog — rd 기반 테이블 노이즈 (hash 연산 → UBO 조회로 대체) ────
     float n1 = dirNoise(rd,  5.0, vec2(0.0,        Time * 3.6));
     float n2 = dirNoise(rd, 12.0, vec2(Time * 2.8, Time * 1.8));
     float turbulence = mix(n1, n2, 0.5);
     float blobIntensity = (1.0 - turbulence) * baseFog * 0.75;
 
-    // ── 3. 왜곡 — turbulence 기반 밝기 변조 (랜덤 UV 재샘플 제거)
-    // 기존 방식(인접 픽셀 랜덤 재샘플)은 픽셀마다 캐시 미스를 일으켜 성능 저하가 심함.
-    // turbulence(이미 계산된 노이즈)로 fog 영역 밝기를 미세 변조해 유사한 시각 효과 유지.
+    // ── 3. 왜곡 — turbulence 기반 밝기 변조 (P1: 랜덤 UV 재샘플 제거) ────────
     float frameTime = floor(Time * 60.0);
     vec3 sceneDistorted = orig.rgb * (1.0 - baseFog * 0.15 * (1.0 - turbulence));
 
-    // 기본 fog 적용 (회색) — baseFog=1 이면 완전히 회색, scene 안 보임
+    // 기본 fog 적용 (회색)
     vec3 afterBaseFog = mix(sceneDistorted, vec3(0.20, 0.20, 0.20), baseFog);
     // 얼룩 fog 추가 (검은색)
     vec3 afterBlob = mix(afterBaseFog, vec3(0.25, 0.03, 0.03), blobIntensity);
     vec3 result    = afterBlob;
 
-    // (b) TV 정적 노이즈: ~1% 확률로 흰색 픽셀 (불투명도 50~100%)
-    // 카메라가 영역 경계 밖으로 나갈수록 노이즈 감쇠 (20블록 밖에서 0%)
-    float camDistFromCenter = length(DomainCenter.xyz); // DomainCenter는 카메라 상대 좌표
+    // ── 4. TV 정적 노이즈 (~1% 확률 흰 픽셀) ────────────────────────────────
+    float camDistFromCenter = length(DomainCenter.xyz);
     float distOutside  = max(0.0, camDistFromCenter - DomainRadius);
     float staticFade   = 1.0 - clamp(distOutside / 20.0, 0.0, 1.0);
 
     float staticHash  = hash2(vec2(texCoord.x * 1920.0 + frameTime * 13.7,
                                    texCoord.y * 1080.0 + frameTime *  9.3));
-    float staticAlpha = step(0.99, staticHash)  // ~1% 확률
+    float staticAlpha = step(0.99, staticHash)
                       * (0.5 + hash2(vec2(staticHash + frameTime, texCoord.x + texCoord.y)) * 0.5)
                       * staticFade;
     result = mix(result, vec3(1.0), staticAlpha * baseFog);
 
-    // Alpha: 페이드 아웃 시 효과를 원본으로 블렌딩 (반경 변화 없이 투명도만 감소)
     fragColor = vec4(mix(orig.rgb, result, Alpha), orig.a);
 }

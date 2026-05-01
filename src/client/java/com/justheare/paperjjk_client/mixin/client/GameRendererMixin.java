@@ -852,6 +852,31 @@ public class GameRendererMixin {
             } finally {
                 stack.pop();
             }
+            // ── NoiseTable UBO 주입 ───────────────────────────────────────────
+            // 버퍼가 없거나 크기가 맞지 않을 때만 생성 + 업로드 (정적 데이터라 한 번만 쓰면 됨)
+            com.mojang.blaze3d.buffers.GpuBuffer noiseBuf = ubs.get("NoiseTable");
+            boolean needsUpload = noiseBuf == null
+                    || (noiseBuf.usage() & 8) == 0
+                    || noiseBuf.size() < com.justheare.paperjjk_client.shader.NoiseTableManager.BUFFER_BYTES;
+            if (needsUpload) {
+                if (noiseBuf != null) noiseBuf.close();
+                noiseBuf = RenderSystem.getDevice().createBuffer(
+                        () -> "JJK NoiseTable", 8 | 128,
+                        com.justheare.paperjjk_client.shader.NoiseTableManager.BUFFER_BYTES);
+                ubs.put("NoiseTable", noiseBuf);
+                org.lwjgl.system.MemoryStack noiseStack = org.lwjgl.system.MemoryStack.stackPush();
+                try {
+                    com.mojang.blaze3d.buffers.Std140Builder nb =
+                        com.mojang.blaze3d.buffers.Std140Builder.onStack(
+                            noiseStack,
+                            com.justheare.paperjjk_client.shader.NoiseTableManager.BUFFER_BYTES);
+                    com.justheare.paperjjk_client.shader.NoiseTableManager.writeToBuilder(nb);
+                    RenderSystem.getDevice().createCommandEncoder()
+                        .writeToBuffer(noiseBuf.slice(), nb.get());
+                } finally {
+                    noiseStack.pop();
+                }
+            }
         } catch (Exception e) {
             System.err.println("[JJKMixin] updateDustStormUniforms failed: " + e.getMessage());
         }

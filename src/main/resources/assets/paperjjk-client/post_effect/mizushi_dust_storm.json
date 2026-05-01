@@ -29,6 +29,9 @@
                     { "name": "Time",          "type": "float", "value": 0.0 },
                     { "name": "_pad0",         "type": "float", "value": 0.0 },
                     { "name": "_pad1",         "type": "float", "value": 0.0 }
+                ],
+                "NoiseTable": [
+                    { "name": "Noise", "type": "vec4", "value": [0.0, 0.0, 0.0, 0.0] }
                 ]
             }
         },
