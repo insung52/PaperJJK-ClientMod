@@ -81,6 +81,7 @@ void main() {
         float bloom  = bloomT * bloomT * (1.0 - inCore_raw) * lenFactor;
 
         accumCore  = max(accumCore, inCore);
+        if (accumCore >= 1.0) break;
         accumBloom += bloom;
     }
 
