@@ -59,6 +59,27 @@ public class GameRendererMixin {
     private static final Identifier MIZUSHI_SHOCKWAVE_EFFECT_ID =
         Identifier.of("paperjjk-client", "mizushi_shockwave");
 
+    /** Framebuffer 인스턴스에서 GL FBO ID(int)를 reflection으로 추출. */
+    @org.spongepowered.asm.mixin.Unique
+    private int getFramebufferFboId(net.minecraft.client.gl.Framebuffer fb) {
+        try {
+            Class<?> cls = fb.getClass();
+            while (cls != null) {
+                for (java.lang.reflect.Field f : cls.getDeclaredFields()) {
+                    if (f.getType() != int.class) continue;
+                    String n = f.getName().toLowerCase();
+                    if (n.contains("fbo") || n.equals("handle") || n.equals("framebufferid")) {
+                        f.setAccessible(true);
+                        int val = (int) f.get(fb);
+                        if (val > 0) return val;
+                    }
+                }
+                cls = cls.getSuperclass();
+            }
+        } catch (Exception ignored) {}
+        return 0;
+    }
+
     /** 배치 렌더링 최대 인스턴스 수 */
     private static final int HACHI_MAX_INSTANCES = 32;
     /**
@@ -306,7 +327,7 @@ public class GameRendererMixin {
                     : AmbientKaiSlashManager.getActiveDomains()) {
                 if (domain.smoothRadius <= 0f) continue;
 
-                // ── 1. Mizushi Dust Storm ────────────────────────────────────
+                // ── 1. Mizushi Dust Storm (fog → apply → blit, 단일 processor 3패스) ─
                 {
                     float dcRelX = (float)(domain.center.x - ambCamPos.x);
                     float dcRelY = (float)(domain.center.y - ambCamPos.y);

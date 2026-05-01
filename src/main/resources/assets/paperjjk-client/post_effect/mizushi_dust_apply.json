@@ -1,0 +1,40 @@
+{
+    "targets": {
+        "blend_result": {},
+        "fog_data":     {}
+    },
+    "passes": [
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "paperjjk-client:post/mizushi_dust_apply",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "minecraft:main"
+                },
+                {
+                    "sampler_name": "Fog",
+                    "target": "fog_data"
+                }
+            ],
+            "output": "blend_result",
+            "uniforms": {}
+        },
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "minecraft:post/blit",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "blend_result"
+                }
+            ],
+            "uniforms": {
+                "BlitConfig": [
+                    { "name": "ColorModulate", "type": "vec4", "value": [1.0, 1.0, 1.0, 1.0] }
+                ]
+            },
+            "output": "minecraft:main"
+        }
+    ]
+}

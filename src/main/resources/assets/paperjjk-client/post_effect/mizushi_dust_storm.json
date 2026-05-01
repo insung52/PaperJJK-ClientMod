@@ -1,5 +1,6 @@
 {
     "targets": {
+        "fog":  {},
         "swap": {}
     },
     "passes": [
@@ -8,16 +9,12 @@
             "fragment_shader": "paperjjk-client:post/mizushi_dust_storm",
             "inputs": [
                 {
-                    "sampler_name": "In",
-                    "target": "minecraft:main"
-                },
-                {
                     "sampler_name": "Depth",
                     "target": "minecraft:main",
                     "use_depth_buffer": true
                 }
             ],
-            "output": "swap",
+            "output": "fog",
             "uniforms": {
                 "DustStormConfig": [
                     { "name": "InvViewProjC0", "type": "vec4", "value": [1.0, 0.0, 0.0, 0.0] },
@@ -34,6 +31,22 @@
                     { "name": "Noise", "type": "vec4", "value": [0.0, 0.0, 0.0, 0.0] }
                 ]
             }
+        },
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "paperjjk-client:post/mizushi_dust_apply",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "minecraft:main"
+                },
+                {
+                    "sampler_name": "Fog",
+                    "target": "fog"
+                }
+            ],
+            "output": "swap",
+            "uniforms": {}
         },
         {
             "vertex_shader": "minecraft:core/screenquad",

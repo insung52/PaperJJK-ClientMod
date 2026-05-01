@@ -1,6 +1,5 @@
 #version 330
 
-uniform sampler2D InSampler;
 uniform sampler2D DepthSampler;
 
 layout(std140) uniform DustStormConfig {
@@ -15,10 +14,6 @@ layout(std140) uniform DustStormConfig {
     float _pad1;
 };
 
-// 사전 계산된 64×64 seamless noise corner 값 테이블.
-// vec4 에 4개씩 패킹 — 1024 × 16 bytes = 16384 bytes (std140).
-// lookupCorner(x, y) = Noise[(y*64+x) >> 2][(y*64+x) & 3]
-// & 63 으로 2^6 타일링 (seamless)
 layout(std140) uniform NoiseTable {
     vec4 Noise[1024];
 };
@@ -33,19 +28,16 @@ float hash(vec2 p) {
     return fract((p.x + p.y) * p.x);
 }
 
-// 사전 계산된 테이블에서 (x, y) corner 값 조회
-// & 63 = bitwise modulo 64 (x < 0 포함, 두의 보수상 올바름)
 float lookupCorner(int x, int y) {
     int idx = (y & 63) * 64 + (x & 63);
     return Noise[idx >> 2][idx & 3];
 }
 
-// hash+vNoise 연산(ALU 16회) → 테이블 조회 + bilinear 보간 (메모리 4회)
 float tableNoise(vec2 p) {
     vec2  uv = p * 64.0;
     ivec2 i  = ivec2(floor(uv));
     vec2  f  = fract(uv);
-    f = f * f * (3.0 - 2.0 * f); // smoothstep
+    f = f * f * (3.0 - 2.0 * f);
     return mix(
         mix(lookupCorner(i.x,     i.y    ),
             lookupCorner(i.x + 1, i.y    ), f.x),
@@ -65,11 +57,10 @@ void main() {
     bool  isSky = depth >= 0.9999;
 
     if (DomainRadius < 0.5) {
-        fragColor = texture(InSampler, texCoord);
+        fragColor = vec4(0.0);
         return;
     }
 
-    // ── 월드 방향 복원 ────────────────────────────────────────────────────────
     vec4 ndc   = vec4(texCoord * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
     mat4 invVP = mat4(InvViewProjC0, InvViewProjC1, InvViewProjC2, InvViewProjC3);
     vec4 wp4   = invVP * ndc;
@@ -78,7 +69,6 @@ void main() {
     vec3  rd      = normalize(worldPos);
     float pixDist = isSky ? 1e10 : length(worldPos);
 
-    // ── Ray-Sphere 교차 → insideLen ───────────────────────────────────────────
     vec3  domC = DomainCenter.xyz;
     vec3  oc   = -domC;
     float b    = dot(oc, rd);
@@ -86,7 +76,7 @@ void main() {
     float disc = b * b - cVal;
 
     if (disc < 0.0) {
-        fragColor = texture(InSampler, texCoord);
+        fragColor = vec4(0.0);
         return;
     }
 
@@ -96,32 +86,23 @@ void main() {
     float insideLen = max(0.0, tExit - tEntry);
 
     if (insideLen < 0.01) {
-        fragColor = texture(InSampler, texCoord);
+        fragColor = vec4(0.0);
         return;
     }
 
-    vec4 orig = texture(InSampler, texCoord);
-
-    // ── 1. 기본 Fog — 거리 비례 회색 ─────────────────────────────────────────
     float baseFog = clamp(0.1 + insideLen / 120.0, 0.0, 1.0);
 
-    // ── 2. 얼룩 Fog — rd 기반 테이블 노이즈 (hash 연산 → UBO 조회로 대체) ────
     float n1 = dirNoise(rd,  5.0, vec2(0.0,        Time * 3.6));
     float n2 = dirNoise(rd, 12.0, vec2(Time * 2.8, Time * 1.8));
     float turbulence = mix(n1, n2, 0.5);
     float blobIntensity = (1.0 - turbulence) * baseFog * 0.75;
 
-    // ── 3. 왜곡 — turbulence 기반 밝기 변조 (P1: 랜덤 UV 재샘플 제거) ────────
     float frameTime = floor(Time * 60.0);
-    vec3 sceneDistorted = orig.rgb * (1.0 - baseFog * 0.15 * (1.0 - turbulence));
 
-    // 기본 fog 적용 (회색)
-    vec3 afterBaseFog = mix(sceneDistorted, vec3(0.20, 0.20, 0.20), baseFog);
-    // 얼룩 fog 추가 (검은색)
-    vec3 afterBlob = mix(afterBaseFog, vec3(0.25, 0.03, 0.03), blobIntensity);
-    vec3 result    = afterBlob;
+    // fog 색상: 회색 ↔ 검붉은 얼룩 (scene 의존 없음 — apply 패스에서 blending)
+    vec3 fogColor = mix(vec3(0.20, 0.20, 0.20), vec3(0.25, 0.03, 0.03), blobIntensity);
 
-    // ── 4. TV 정적 노이즈 (~1% 확률 흰 픽셀) ────────────────────────────────
+    // TV 정적 노이즈
     float camDistFromCenter = length(DomainCenter.xyz);
     float distOutside  = max(0.0, camDistFromCenter - DomainRadius);
     float staticFade   = 1.0 - clamp(distOutside / 20.0, 0.0, 1.0);
@@ -131,7 +112,9 @@ void main() {
     float staticAlpha = step(0.99, staticHash)
                       * (0.5 + hash(vec2(staticHash + frameTime, texCoord.x + texCoord.y)) * 0.5)
                       * staticFade;
-    result = mix(result, vec3(1.0), staticAlpha * baseFog);
+    fogColor = mix(fogColor, vec3(1.0), staticAlpha * baseFog);
 
-    fragColor = vec4(mix(orig.rgb, result, Alpha), orig.a);
+    // 출력: fog 색상 + 블렌딩 alpha
+    // apply 패스에서: mix(scene, fogColor, fogAlpha)
+    fragColor = vec4(fogColor, baseFog * Alpha);
 }
