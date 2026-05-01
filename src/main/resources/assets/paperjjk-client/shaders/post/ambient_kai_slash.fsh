@@ -30,6 +30,9 @@ void main() {
     float accumCore  = 0.0;
     float accumBloom = 0.0;
 
+    // depth 샘플은 루프 밖에서 1회만 — 루프 안에 두면 슬래시 N개 × 픽셀 수만큼 샘플 발생
+    float worldDepth = texture(DepthSampler, texCoord).r;
+
     for (int i = 0; i < n; i++) {
         vec4  ep        = Slashes[i * 3];
         vec4  meta      = Slashes[i * 3 + 1];
@@ -59,7 +62,6 @@ void main() {
 
         // ── Depth 테스트: 슬래시가 geometry 뒤에 있으면 스킵 ─────────────────
         float slashDepth = mix(depthData.x, depthData.y, along_t);
-        float worldDepth = texture(DepthSampler, texCoord).r;
         if (slashDepth > worldDepth) continue;
 
         // ── 거리 기반 두께 스케일 ────────────────────────────────────────────
