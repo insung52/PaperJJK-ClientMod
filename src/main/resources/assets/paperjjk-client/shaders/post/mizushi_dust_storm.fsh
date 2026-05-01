@@ -26,15 +26,11 @@ layout(std140) uniform NoiseTable {
 in vec2 texCoord;
 out vec4 fragColor;
 
-// TV 정적 노이즈는 고주파 랜덤 패턴이 필요하므로 hash 함수 유지
+// TV 정적 노이즈용 (고주파 랜덤 패턴, hash 1회로 충분)
 float hash(vec2 p) {
     p = fract(p * vec2(0.1031, 0.1030));
     p += dot(p, p.yx + 19.19);
     return fract((p.x + p.y) * p.x);
-}
-
-float hash2(vec2 p) {
-    return hash(vec2(hash(p) * 7321.9, hash(p.yx) * 3917.5));
 }
 
 // 사전 계산된 테이블에서 (x, y) corner 값 조회
@@ -130,10 +126,10 @@ void main() {
     float distOutside  = max(0.0, camDistFromCenter - DomainRadius);
     float staticFade   = 1.0 - clamp(distOutside / 20.0, 0.0, 1.0);
 
-    float staticHash  = hash2(vec2(texCoord.x * 1920.0 + frameTime * 13.7,
-                                   texCoord.y * 1080.0 + frameTime *  9.3));
+    float staticHash  = hash(vec2(texCoord.x * 1920.0 + frameTime * 13.7,
+                                  texCoord.y * 1080.0 + frameTime *  9.3));
     float staticAlpha = step(0.99, staticHash)
-                      * (0.5 + hash2(vec2(staticHash + frameTime, texCoord.x + texCoord.y)) * 0.5)
+                      * (0.5 + hash(vec2(staticHash + frameTime, texCoord.x + texCoord.y)) * 0.5)
                       * staticFade;
     result = mix(result, vec3(1.0), staticAlpha * baseFog);
 
