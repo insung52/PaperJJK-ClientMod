@@ -59,6 +59,17 @@ public class GameRendererMixin {
     private static final Identifier MIZUSHI_SHOCKWAVE_EFFECT_ID =
         Identifier.of("paperjjk-client", "mizushi_shockwave");
 
+    /** 배치 렌더링 최대 인스턴스 수 */
+    private static final int HACHI_MAX_INSTANCES = 32;
+    /**
+     * HachiSlashConfig 배치 버퍼 크기 (std140):
+     *   vec4 Params0[32] = 32 × 16 = 512 bytes
+     *   vec4 Params1[32] = 32 × 16 = 512 bytes
+     *   float Count + 3 padding = 16 bytes
+     *   Total = 1040 bytes
+     */
+    private static final int HACHI_BATCH_BYTES = 2 * HACHI_MAX_INSTANCES * 16 + 16;
+
     private static final Identifier MIZUSHI_THERMOBARIC_EFFECT_ID =
         Identifier.of("paperjjk-client", "mizushi_thermobaric");
 
@@ -213,7 +224,7 @@ public class GameRendererMixin {
             }
         }
 
-        // ── Hachi slash (팔) — 격자 참격, 인스턴스당 1 pass ─────────────────────
+        // ── Hachi slash (팔) — 배치 렌더링: 모든 인스턴스를 1 pass 로 처리 ────────
         List<HachiSlashEffectManager.HachiSlashEffect> hachiEffects = HachiSlashEffectManager.getActiveEffects();
         if (!hachiEffects.isEmpty()) {
             PostEffectProcessor hachiProcessor;
@@ -222,25 +233,13 @@ public class GameRendererMixin {
                     HACHI_SLASH_EFFECT_ID,
                     Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN)
                 );
-            } catch (Exception e) {
-                System.err.println("[JJKMixin] Failed to load hachi_slash post effect: " + e.getMessage());
+            } catch (Exception ex) {
+                System.err.println("[JJKMixin] Failed to load hachi_slash post effect: " + ex.getMessage());
                 hachiProcessor = null;
             }
             if (hachiProcessor != null) {
-                for (HachiSlashEffectManager.HachiSlashEffect e : hachiEffects) {
-                    Vec3d center = new Vec3d(e.worldX, e.worldY, e.worldZ);
-                    Vec3d sp = WorldToScreenUtil.worldToScreen(center, camera, projectionMatrix);
-                    if (sp == null) continue;
-
-                    float cx = (float) sp.x;
-                    float cy = 1.0f - (float) sp.y;  // WorldToScreenUtil y=0 위쪽 → 셰이더 y=0 아래쪽
-                    float dist = (float) sp.z;
-                    float distScale = 3.0f / Math.max(3.0f, dist);
-                    float hDepth = WorldToScreenUtil.worldToDepth(center, camera, projectionMatrix);
-                    updateHachiSlashUniforms(hachiProcessor, cx, cy, e.angle, e.getTime(),
-                            e.skewAngle, distScale, hDepth);
-                    hachiProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
-                }
+                updateHachiSlashBatch(hachiProcessor, hachiEffects, camera, projectionMatrix);
+                hachiProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
             }
         }
 
@@ -675,21 +674,20 @@ public class GameRendererMixin {
     }
 
     /**
-     * Updates the HachiSlashConfig uniform buffer.
+     * HachiSlashConfig 배치 uniform 버퍼 업데이트.
      *
-     * std140 layout:
-     *   vec2  Center    →  8 bytes
-     *   float Angle     →  4 bytes
-     *   float Time      →  4 bytes
-     *   float SkewAngle →  4 bytes
-     *   float DistScale →  4 bytes
-     *   float Depth     →  4 bytes
-     *   Total           = 28 bytes
+     * std140 layout (1040 bytes):
+     *   vec4 Params0[32]  → 512 bytes  (xy=center, z=angle, w=skewAngle)
+     *   vec4 Params1[32]  → 512 bytes  (x=time, y=distScale, z=depth, w=0)
+     *   float Count + 3 padding → 16 bytes
+     *
+     * 화면 밖으로 투영된 인스턴스(sp==null)는 건너뛰며,
+     * 유효 인스턴스만 순서대로 채우고 Count 에 실제 수를 기록한다.
      */
     @SuppressWarnings("unchecked")
-    private void updateHachiSlashUniforms(PostEffectProcessor processor,
-                                          float cx, float cy, float angle, float time,
-                                          float skewAngle, float distScale, float depth) {
+    private void updateHachiSlashBatch(PostEffectProcessor processor,
+                                       List<HachiSlashEffectManager.HachiSlashEffect> effects,
+                                       Camera camera, Matrix4f projectionMatrix) {
         try {
             java.lang.reflect.Field passesField = null;
             for (java.lang.reflect.Field f : PostEffectProcessor.class.getDeclaredFields()) {
@@ -713,31 +711,76 @@ public class GameRendererMixin {
             com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("HachiSlashConfig");
             if (buf == null) return;
 
-            if ((buf.usage() & 8) == 0 || buf.size() < 28) {
+            if ((buf.usage() & 8) == 0 || buf.size() < HACHI_BATCH_BYTES) {
                 buf.close();
                 com.mojang.blaze3d.buffers.GpuBuffer newBuf =
-                    RenderSystem.getDevice().createBuffer(() -> "JJK HachiSlashConfig", 8 | 128, 28);
+                    RenderSystem.getDevice().createBuffer(() -> "JJK HachiSlashConfig", 8 | 128, HACHI_BATCH_BYTES);
                 ubs.put("HachiSlashConfig", newBuf);
                 buf = newBuf;
             }
 
+            // 유효 인스턴스 수집 (화면 투영 실패 → 스킵)
+            int count = 0;
+            float[] p0 = new float[HACHI_MAX_INSTANCES * 4]; // cx, cy, angle, skewAngle
+            float[] p1 = new float[HACHI_MAX_INSTANCES * 4]; // time, distScale, depth, 0
+
+            for (HachiSlashEffectManager.HachiSlashEffect e : effects) {
+                if (count >= HACHI_MAX_INSTANCES) break;
+                Vec3d center = new Vec3d(e.worldX, e.worldY, e.worldZ);
+                Vec3d sp = WorldToScreenUtil.worldToScreen(center, camera, projectionMatrix);
+                if (sp == null) continue;
+
+                int idx = count * 4;
+                p0[idx]     = (float) sp.x;
+                p0[idx + 1] = 1.0f - (float) sp.y; // y=0 위쪽 → 셰이더 y=0 아래쪽
+                p0[idx + 2] = e.angle;
+                p0[idx + 3] = e.skewAngle;
+
+                p1[idx]     = e.getTime();
+                p1[idx + 1] = 3.0f / Math.max(3.0f, (float) sp.z);
+                p1[idx + 2] = WorldToScreenUtil.worldToDepth(center, camera, projectionMatrix);
+                p1[idx + 3] = 0.0f;
+
+                count++;
+            }
+
+            if (count == 0) return;
+
             org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush();
             try {
                 com.mojang.blaze3d.buffers.Std140Builder b =
-                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 28);
-                b.putVec2(cx, cy);
-                b.putFloat(angle);
-                b.putFloat(time);
-                b.putFloat(skewAngle);
-                b.putFloat(distScale);
-                b.putFloat(depth);
+                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, HACHI_BATCH_BYTES);
+
+                // Params0[32]: xy=center, z=angle, w=skewAngle (각 16 bytes = vec4)
+                for (int i = 0; i < HACHI_MAX_INSTANCES; i++) {
+                    int idx = i * 4;
+                    b.putVec2(p0[idx], p0[idx + 1]);
+                    b.putFloat(p0[idx + 2]);
+                    b.putFloat(p0[idx + 3]);
+                }
+
+                // Params1[32]: x=time, y=distScale, z=depth, w=0 (각 16 bytes = vec4)
+                for (int i = 0; i < HACHI_MAX_INSTANCES; i++) {
+                    int idx = i * 4;
+                    b.putFloat(p1[idx]);
+                    b.putFloat(p1[idx + 1]);
+                    b.putFloat(p1[idx + 2]);
+                    b.putFloat(p1[idx + 3]);
+                }
+
+                // Count + 12 bytes padding (16-byte 경계 맞춤)
+                b.putFloat((float) count);
+                b.putFloat(0f);
+                b.putFloat(0f);
+                b.putFloat(0f);
+
                 RenderSystem.getDevice().createCommandEncoder()
                     .writeToBuffer(buf.slice(), b.get());
             } finally {
                 stack.pop();
             }
-        } catch (Exception e) {
-            System.err.println("[JJKMixin] updateHachiSlashUniforms failed: " + e.getMessage());
+        } catch (Exception ex) {
+            System.err.println("[JJKMixin] updateHachiSlashBatch failed: " + ex.getMessage());
         }
     }
 

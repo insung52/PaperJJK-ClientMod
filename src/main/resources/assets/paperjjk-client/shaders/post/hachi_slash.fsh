@@ -3,14 +3,17 @@
 uniform sampler2D InSampler;
 uniform sampler2D DepthSampler;
 
-// std140: vec2(8) + float(4)*5 = 28 bytes
+#define MAX_HACHI 32
+
+// std140:
+//   vec4 Params0[32]  →  512 bytes  (xy=center, z=angle, w=skewAngle)
+//   vec4 Params1[32]  →  512 bytes  (x=time, y=distScale, z=depth, w=unused)
+//   float Count       →   16 bytes  (+ 12 padding to 16-byte boundary)
+//   Total             = 1040 bytes
 layout(std140) uniform HachiSlashConfig {
-    vec2  Center;    // 화면 UV 중심 (y=0 바닥)
-    float Angle;     // 선 집합 A 각도 (라디안)
-    float Time;      // 경과 시간 (초), 0 ~ ~0.35
-    float SkewAngle; // 선 집합 B 각도 (Angle + 70~110°)
-    float DistScale; // 거리 스케일 (1.0 = 3블록, 감소 → 더 먼 거리)
-    float Depth;     // 중심점 NDC depth [0,1]
+    vec4  Params0[MAX_HACHI];
+    vec4  Params1[MAX_HACHI];
+    float Count;
 };
 
 in vec2 texCoord;
@@ -21,8 +24,8 @@ const float CORE_HALF_W     = 0.0012;
 const float BLOOM_WIDTH     = 0.002;
 const float SPACING         = 0.038;
 const float BASE_HALF_LEN   = 0.10;
-const float TIME_OFFSET_MAX = 0.15; // 선별 최대 시간차 (초)
-const float LINE_ANIM_DUR   = 0.20; // 선 하나의 애니메이션 총 길이 (초)
+const float TIME_OFFSET_MAX = 0.15;
+const float LINE_ANIM_DUR   = 0.20;
 
 float hash(float n) {
     return fract(sin(n * 127.1 + 311.7) * 43758.5453);
@@ -34,39 +37,30 @@ struct LineResult {
 };
 
 // 평행선 집합 SDF + 애니메이션
-// rot   : 회전된 rel 좌표
-// setId : 집합 구분값 (해시 다양화)
-LineResult parallelLines(vec2 rot, float setId) {
-    // Y 방향으로 SPACING 마다 타일링 → 타일 인덱스
+// time 을 파라미터로 받아 인스턴스별 독립 시간 사용
+LineResult parallelLines(vec2 rot, float setId, float time) {
     float tileIdx = floor((rot.y + SPACING * 0.5) / SPACING);
     float phase   = mod(rot.y + SPACING * 0.5, SPACING) - SPACING * 0.5;
 
-    // 격자 범위 제한: set 당 6개 선 (-2 ~ 3 타일)
     if (tileIdx < -2.0 || tileIdx > 3.0) {
         LineResult r; r.d = 1.0; r.fade = 0.0; return r;
     }
 
-    // 타일별 랜덤: 길이 배율(1.0~1.5x), 시간 지연(0~0.15s)
     float rndLen  = hash(tileIdx * 3.7  + setId * 137.1);
     float rndTime = hash(tileIdx * 5.3  + setId * 91.7);
 
     float halfLen    = BASE_HALF_LEN * (1.5 + rndLen * 2.5);
     float timeOffset = rndTime * TIME_OFFSET_MAX;
 
-    // 선 자체의 정규화 시간 (0 ~ 1, LINE_ANIM_DUR 기준)
-    float localT = clamp((Time - timeOffset) / LINE_ANIM_DUR, 0.0, 1.0);
+    float localT = clamp((time - timeOffset) / LINE_ANIM_DUR, 0.0, 1.0);
 
-    // 등장: 중심에서 양끝으로 확장
     float currentLen = smoothstep(0.0, 0.45, localT) * halfLen;
-    // 소멸: 중심에 구멍이 생겨 양끝 방향으로 확장 (중간→양끝으로 사라짐)
     float innerLen   = smoothstep(0.55, 1.0, localT) * halfLen;
 
-    // 캡슐 SDF (중심 구멍 포함)
     float paraOver = max(0.0, abs(rot.x) - currentLen);
     float paraIn   = max(0.0, innerLen   - abs(rot.x));
     float d = length(vec2(abs(phase), max(paraOver, paraIn)));
 
-    // 불투명도 (길이와 함께 fade in/out)
     float fade = smoothstep(0.0, 0.1, localT) * (1.0 - smoothstep(0.9, 1.0, localT));
 
     LineResult r;
@@ -76,52 +70,54 @@ LineResult parallelLines(vec2 rot, float setId) {
 }
 
 void main() {
-    // aspect 보정 + 거리 스케일
-    // DistScale < 1 → rel 값이 커짐 → 이펙트 화면상 축소
-    vec2 rel = (texCoord - Center) * vec2(ASPECT, 1.0) / max(DistScale, 0.05);
+    vec4  result     = texture(InSampler, texCoord);
+    float worldDepth = texture(DepthSampler, texCoord).r; // 프레임당 1회만 샘플링
 
-    // 선 집합 A (Angle)
-    float cosA = cos(Angle), sinA = sin(Angle);
-    vec2 rotA = vec2( rel.x * cosA + rel.y * sinA,
-                     -rel.x * sinA + rel.y * cosA);
-    LineResult lrA = parallelLines(rotA, 0.0);
+    int n = int(Count);
+    for (int i = 0; i < n; i++) {
+        vec2  center    = Params0[i].xy;
+        float angle     = Params0[i].z;
+        float skewAngle = Params0[i].w;
+        float time      = Params1[i].x;
+        float distScale = Params1[i].y;
+        float depth     = Params1[i].z;
 
-    // 선 집합 B (SkewAngle — 70~110° 비틀림)
-    float cosB = cos(SkewAngle), sinB = sin(SkewAngle);
-    vec2 rotB = vec2( rel.x * cosB + rel.y * sinB,
-                     -rel.x * sinB + rel.y * cosB);
-    LineResult lrB = parallelLines(rotB, 1.0);
+        // 이펙트 중심이 geometry 뒤에 있으면 스킵
+        if (depth > worldDepth) continue;
 
-    // 두 집합 각각 독립 계산 후 누적 합산 (교차점에서 양쪽 bloom 모두 표시)
+        // aspect 보정 + 거리 스케일
+        vec2 rel = (texCoord - center) * vec2(ASPECT, 1.0) / max(distScale, 0.05);
 
-    // 집합 A
-    float inCoreA_raw = step(lrA.d, CORE_HALF_W);
-    float bloomTA     = 1.0 - smoothstep(CORE_HALF_W, CORE_HALF_W + BLOOM_WIDTH, lrA.d);
-    float bloomA      = bloomTA * bloomTA * (1.0 - inCoreA_raw) * lrA.fade;
-    float inCoreA     = inCoreA_raw * lrA.fade;
+        // 선 집합 A (Angle)
+        float cosA = cos(angle), sinA = sin(angle);
+        vec2 rotA = vec2( rel.x * cosA + rel.y * sinA,
+                         -rel.x * sinA + rel.y * cosA);
+        LineResult lrA = parallelLines(rotA, 0.0, time);
 
-    // 집합 B
-    float inCoreB_raw = step(lrB.d, CORE_HALF_W);
-    float bloomTB     = 1.0 - smoothstep(CORE_HALF_W, CORE_HALF_W + BLOOM_WIDTH, lrB.d);
-    float bloomB      = bloomTB * bloomTB * (1.0 - inCoreB_raw) * lrB.fade;
-    float inCoreB     = inCoreB_raw * lrB.fade;
+        // 선 집합 B (SkewAngle)
+        float cosB = cos(skewAngle), sinB = sin(skewAngle);
+        vec2 rotB = vec2( rel.x * cosB + rel.y * sinB,
+                         -rel.x * sinB + rel.y * cosB);
+        LineResult lrB = parallelLines(rotB, 1.0, time);
 
-    // 코어: 어느 한쪽이라도 코어면 검정 (max)
-    float inCore    = max(inCoreA, inCoreB);
-    // bloom: 두 집합 합산 — 교차점에서 더 밝게 보임
-    float bloomFact = bloomA + bloomB;
+        // 집합 A
+        float inCoreA_raw = step(lrA.d, CORE_HALF_W);
+        float bloomTA     = 1.0 - smoothstep(CORE_HALF_W, CORE_HALF_W + BLOOM_WIDTH, lrA.d);
+        float bloomA      = bloomTA * bloomTA * (1.0 - inCoreA_raw) * lrA.fade;
+        float inCoreA     = inCoreA_raw * lrA.fade;
 
-    // ── Depth 테스트: 이펙트 중심이 geometry 뒤에 있는 픽셀은 스킵 ────────────
-    float worldDepth = texture(DepthSampler, texCoord).r;
-    if (Depth > worldDepth) {
-        fragColor = texture(InSampler, texCoord);
-        return;
+        // 집합 B
+        float inCoreB_raw = step(lrB.d, CORE_HALF_W);
+        float bloomTB     = 1.0 - smoothstep(CORE_HALF_W, CORE_HALF_W + BLOOM_WIDTH, lrB.d);
+        float bloomB      = bloomTB * bloomTB * (1.0 - inCoreB_raw) * lrB.fade;
+        float inCoreB     = inCoreB_raw * lrB.fade;
+
+        float inCore    = max(inCoreA, inCoreB);
+        float bloomFact = bloomA + bloomB;
+
+        result = mix(result, vec4(0.0, 0.0, 0.0, 1.0), inCore);
+        result.rgb += vec3(1.0) * bloomFact;
     }
-
-    vec4 orig   = texture(InSampler, texCoord);
-    vec4 result = orig;
-    result      = mix(result, vec4(0.0, 0.0, 0.0, 1.0), inCore);
-    result.rgb += vec3(1.0) * bloomFact;
 
     fragColor = result;
 }

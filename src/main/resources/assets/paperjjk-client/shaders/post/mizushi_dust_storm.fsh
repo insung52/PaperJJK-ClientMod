@@ -94,15 +94,11 @@ void main() {
     float turbulence = mix(n1, n2, 0.5);
     float blobIntensity = (1.0 - turbulence) * baseFog * 0.75;
 
-    // ── 3. 왜곡 — 인접 픽셀 대체 (fog 적용 전 scene 에 먼저 적용) ────────────
+    // ── 3. 왜곡 — turbulence 기반 밝기 변조 (랜덤 UV 재샘플 제거)
+    // 기존 방식(인접 픽셀 랜덤 재샘플)은 픽셀마다 캐시 미스를 일으켜 성능 저하가 심함.
+    // turbulence(이미 계산된 노이즈)로 fog 영역 밝기를 미세 변조해 유사한 시각 효과 유지.
     float frameTime = floor(Time * 60.0);
-
-    float rx = hash(vec2(texCoord.x * 2341.0 + frameTime, texCoord.y * 1289.0));
-    float ry = hash(vec2(texCoord.y * 2341.0 + frameTime, texCoord.x * 1289.0));
-    vec2 pixOffset = (vec2(rx, ry) - 0.5) * 0.005;
-    vec3 neighbor  = texture(InSampler, clamp(texCoord + pixOffset, 0.001, 0.999)).rgb;
-    // fog가 강할수록 인접 픽셀로 더 대체됨 (fog가 그 위에 덮이므로 scene 새어나옴 없음)
-    vec3 sceneDistorted = mix(orig.rgb, neighbor, baseFog * 0.5);
+    vec3 sceneDistorted = orig.rgb * (1.0 - baseFog * 0.15 * (1.0 - turbulence));
 
     // 기본 fog 적용 (회색) — baseFog=1 이면 완전히 회색, scene 안 보임
     vec3 afterBaseFog = mix(sceneDistorted, vec3(0.20, 0.20, 0.20), baseFog);
