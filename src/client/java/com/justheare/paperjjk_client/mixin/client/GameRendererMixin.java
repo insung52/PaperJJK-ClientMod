@@ -142,6 +142,10 @@ public class GameRendererMixin {
     private static final Identifier BARRIER_EFFECT_ID =
         Identifier.of("paperjjk-client", "barrier");
 
+    @SuppressWarnings("rawtypes")
+    private static final java.util.Set BARRIER_FB_SET =
+        java.util.Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN);
+
     /**
      * Apply refraction post-processing BEFORE the HUD renders.
      * This ensures the crosshair, health bar, hotbar etc. are NOT distorted.
@@ -611,10 +615,9 @@ public class GameRendererMixin {
 
             PostEffectProcessor barrierProcessor;
             try {
+                //noinspection unchecked
                 barrierProcessor = client.getShaderLoader().loadPostEffect(
-                    BARRIER_EFFECT_ID,
-                    java.util.Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN)
-                );
+                    BARRIER_EFFECT_ID, BARRIER_FB_SET);
             } catch (Exception e) {
                 System.err.println("[JJKMixin] Failed to load barrier post effect: " + e.getMessage());
                 barrierProcessor = null;
