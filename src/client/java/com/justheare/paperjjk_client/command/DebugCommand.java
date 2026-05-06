@@ -66,6 +66,18 @@ public class DebugCommand {
                         .executes(DebugCommand::triggerThermobaricWithRadius)
                     )
                 )
+                .then(literal("barrier")
+                    .executes(DebugCommand::toggleBarrier)
+                    .then(argument("power", FloatArgumentType.floatArg(0.0f, 1.0f))
+                        .executes(DebugCommand::toggleBarrierWithPower)
+                        .then(argument("radius", FloatArgumentType.floatArg(1f, 50f))
+                            .executes(DebugCommand::toggleBarrierWithPowerRadius)
+                        )
+                    )
+                )
+                .then(literal("barrierhit")
+                    .executes(DebugCommand::triggerBarrierHit)
+                )
         );
     }
 
@@ -323,6 +335,77 @@ public class DebugCommand {
                     " §f(§e" + String.format("%.1f", durationSec) + "s§f)")
             );
         }
+        return 1;
+    }
+
+    private static int toggleBarrier(CommandContext<FabricClientCommandSource> context) {
+        return toggleBarrierImpl(context, 0.5f, 5.0f);
+    }
+
+    private static int toggleBarrierWithPower(CommandContext<FabricClientCommandSource> context) {
+        float power = FloatArgumentType.getFloat(context, "power");
+        return toggleBarrierImpl(context, power, 5.0f);
+    }
+
+    private static int toggleBarrierWithPowerRadius(CommandContext<FabricClientCommandSource> context) {
+        float power  = FloatArgumentType.getFloat(context, "power");
+        float radius = FloatArgumentType.getFloat(context, "radius");
+        return toggleBarrierImpl(context, power, radius);
+    }
+
+    private static int toggleBarrierImpl(CommandContext<FabricClientCommandSource> context,
+                                         float power, float radius) {
+        net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+        if (client.player == null) {
+            context.getSource().sendFeedback(Text.literal("§c[Error] No player found"));
+            return 0;
+        }
+        if (com.justheare.paperjjk_client.shader.PassiveBarrierManager.isActive()) {
+            com.justheare.paperjjk_client.shader.PassiveBarrierManager.deactivate();
+            context.getSource().sendFeedback(
+                Text.literal("§d[PaperJJK] §f배리어 §cDEACTIVATED")
+            );
+        } else {
+            Vec3d pos = new Vec3d(client.player.getX(),
+                client.player.getY() + client.player.getHeight() / 2.0,
+                client.player.getZ());
+            com.justheare.paperjjk_client.shader.PassiveBarrierManager.activate(pos, radius, power);
+            context.getSource().sendFeedback(
+                Text.literal("§d[PaperJJK] §f배리어 §aACTIVATED §f| power §e" +
+                    String.format("%.2f", power) +
+                    " §f| radius §e" + String.format("%.1f", radius) +
+                    " §f| center §e" + String.format("(%.1f, %.1f, %.1f)", pos.x, pos.y, pos.z))
+            );
+        }
+        return 1;
+    }
+
+    private static int triggerBarrierHit(CommandContext<FabricClientCommandSource> context) {
+        net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+        if (!com.justheare.paperjjk_client.shader.PassiveBarrierManager.isActive()) {
+            context.getSource().sendFeedback(
+                Text.literal("§c[PaperJJK] 배리어가 비활성 상태입니다. 먼저 /jjkdebug barrier 실행")
+            );
+            return 0;
+        }
+        if (client.player == null) {
+            context.getSource().sendFeedback(Text.literal("§c[Error] No player found"));
+            return 0;
+        }
+        // 플레이어 → 배리어 중심 방향으로 표면 충돌 지점 계산
+        Vec3d center    = com.justheare.paperjjk_client.shader.PassiveBarrierManager.center;
+        float radius    = com.justheare.paperjjk_client.shader.PassiveBarrierManager.radius;
+        Vec3d playerPos = new Vec3d(client.player.getX(),
+            client.player.getY() + client.player.getHeight() / 2.0,
+            client.player.getZ());
+        Vec3d dir       = center.subtract(playerPos);
+        Vec3d hitDir    = dir.lengthSquared() > 0.0001 ? dir.normalize() : new Vec3d(0, 0, 1);
+        Vec3d hitPos    = center.add(hitDir.negate().multiply(radius));
+        com.justheare.paperjjk_client.shader.PassiveBarrierManager.addRipple(hitPos, 1.0f);
+        context.getSource().sendFeedback(
+            Text.literal("§d[PaperJJK] §f배리어 충돌 파동 §a+1 §fat §e" +
+                String.format("(%.1f, %.1f, %.1f)", hitPos.x, hitPos.y, hitPos.z))
+        );
         return 1;
     }
 

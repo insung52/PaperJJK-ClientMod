@@ -139,6 +139,9 @@ public class GameRendererMixin {
     private static final Identifier MIZUSHI_THERMOBARIC_EFFECT_ID =
         Identifier.of("paperjjk-client", "mizushi_thermobaric");
 
+    private static final Identifier BARRIER_EFFECT_ID =
+        Identifier.of("paperjjk-client", "barrier");
+
     /**
      * Apply refraction post-processing BEFORE the HUD renders.
      * This ensures the crosshair, health bar, hotbar etc. are NOT distorted.
@@ -168,7 +171,8 @@ public class GameRendererMixin {
                 && !HachiSlashEffectManager.hasActiveEffects()
                 && !AmbientKaiSlashManager.hasActiveDomains()
                 && !MizushiChargeEffectManager.isActive()
-                && !MizushiThermobaricManager.isActive()) return;
+                && !MizushiThermobaricManager.isActive()
+                && !com.justheare.paperjjk_client.shader.PassiveBarrierManager.isActive()) return;
 
         Camera camera = client.gameRenderer.getCamera();
         // Use the actual dynamic FOV (includes sprint/fly/speed effect/bow draw modifiers)
@@ -594,6 +598,41 @@ public class GameRendererMixin {
                 }
             }
         }
+
+        // ── Infinity Passive Barrier ───────────────────────────────────────────
+        if (com.justheare.paperjjk_client.shader.PassiveBarrierManager.isActive()) {
+            Matrix4f barrierViewMat = new Matrix4f()
+                .rotation(camera.getRotation().conjugate(new org.joml.Quaternionf()));
+            Matrix4f barrierInvVP   = projectionMatrix
+                .mul(barrierViewMat, new Matrix4f())
+                .invert(new Matrix4f());
+            Vec3d camPos = ((com.justheare.paperjjk_client.mixin.client.CameraAccessor) camera).getPos();
+
+            Vec3d bc    = com.justheare.paperjjk_client.shader.PassiveBarrierManager.center;
+            float relCx = (float)(bc.x - camPos.x);
+            float relCy = (float)(bc.y - camPos.y);
+            float relCz = (float)(bc.z - camPos.z);
+
+            PostEffectProcessor barrierProcessor;
+            try {
+                barrierProcessor = client.getShaderLoader().loadPostEffect(
+                    BARRIER_EFFECT_ID,
+                    java.util.Set.of(net.minecraft.client.render.DefaultFramebufferSet.MAIN)
+                );
+            } catch (Exception e) {
+                System.err.println("[JJKMixin] Failed to load barrier post effect: " + e.getMessage());
+                barrierProcessor = null;
+            }
+            if (barrierProcessor != null) {
+                float barrierTime = (float)(System.currentTimeMillis() % 100000L) / 1000.0f;
+                updateBarrierUniforms(barrierProcessor, barrierInvVP,
+                    relCx, relCy, relCz,
+                    com.justheare.paperjjk_client.shader.PassiveBarrierManager.radius,
+                    com.justheare.paperjjk_client.shader.PassiveBarrierManager.power,
+                    barrierTime, camPos);
+                barrierProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
+            }
+        }
     }
 
     /**
@@ -936,6 +975,77 @@ public class GameRendererMixin {
             }
         } catch (Exception e) {
             System.err.println("[JJKMixin] updateDomainUniforms failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Updates the BarrierConfig uniform buffer.
+     *
+     * std140 layout (256 bytes):
+     *   vec4 InvViewProjC0-C3  → 64 bytes
+     *   vec4 BarrierCenterRadius → 16 bytes  (xyz=cam-relative center, w=radius)
+     *   vec4 BarrierControl    → 16 bytes  (x=power, y=time)
+     *   vec4 Ripple0-7         → 128 bytes (xyz=cam-relative pos, w=age)
+     *   vec4 RippleIntensityA  → 16 bytes  (ripples 0-3)
+     *   vec4 RippleIntensityB  → 16 bytes  (ripples 4-7)
+     */
+    @SuppressWarnings("unchecked")
+    private void updateBarrierUniforms(PostEffectProcessor processor,
+                                       Matrix4f invViewProj,
+                                       float relCx, float relCy, float relCz,
+                                       float radius, float power, float time,
+                                       Vec3d camPos) {
+        try {
+            java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> ubs =
+                getUniformBuffers(processor);
+            if (ubs == null) return;
+
+            com.mojang.blaze3d.buffers.GpuBuffer buf = ubs.get("BarrierConfig");
+            if (buf == null) return;
+
+            if ((buf.usage() & 8) == 0 || buf.size() < 256) {
+                buf.close();
+                com.mojang.blaze3d.buffers.GpuBuffer newBuf =
+                    RenderSystem.getDevice().createBuffer(() -> "JJK BarrierConfig", 8 | 128, 256);
+                ubs.put("BarrierConfig", newBuf);
+                buf = newBuf;
+            }
+
+            org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush();
+            try {
+                com.mojang.blaze3d.buffers.Std140Builder b =
+                    com.mojang.blaze3d.buffers.Std140Builder.onStack(stack, 256);
+                // InvViewProj columns
+                b.putVec4(invViewProj.m00(), invViewProj.m01(), invViewProj.m02(), invViewProj.m03());
+                b.putVec4(invViewProj.m10(), invViewProj.m11(), invViewProj.m12(), invViewProj.m13());
+                b.putVec4(invViewProj.m20(), invViewProj.m21(), invViewProj.m22(), invViewProj.m23());
+                b.putVec4(invViewProj.m30(), invViewProj.m31(), invViewProj.m32(), invViewProj.m33());
+                // BarrierCenterRadius
+                b.putVec4(relCx, relCy, relCz, radius);
+                // BarrierControl
+                b.putVec4(power, time, 0f, 0f);
+                // Ripple0..7 (cam-relative)
+                Vec3d[] rp = com.justheare.paperjjk_client.shader.PassiveBarrierManager.ripplePos;
+                float[] ra = com.justheare.paperjjk_client.shader.PassiveBarrierManager.rippleAge;
+                for (int i = 0; i < 8; i++) {
+                    b.putVec4(
+                        (float)(rp[i].x - camPos.x),
+                        (float)(rp[i].y - camPos.y),
+                        (float)(rp[i].z - camPos.z),
+                        ra[i]
+                    );
+                }
+                // RippleIntensityA/B
+                float[] ri = com.justheare.paperjjk_client.shader.PassiveBarrierManager.rippleIntensity;
+                b.putVec4(ri[0], ri[1], ri[2], ri[3]);
+                b.putVec4(ri[4], ri[5], ri[6], ri[7]);
+                RenderSystem.getDevice().createCommandEncoder()
+                    .writeToBuffer(buf.slice(), b.get());
+            } finally {
+                stack.pop();
+            }
+        } catch (Exception e) {
+            System.err.println("[JJKMixin] updateBarrierUniforms failed: " + e.getMessage());
         }
     }
 

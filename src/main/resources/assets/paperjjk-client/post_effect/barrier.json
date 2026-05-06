@@ -1,0 +1,59 @@
+{
+    "targets": {
+        "swap": {}
+    },
+    "passes": [
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "paperjjk-client:post/barrier",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "minecraft:main"
+                },
+                {
+                    "sampler_name": "Depth",
+                    "target": "minecraft:main",
+                    "use_depth_buffer": true
+                }
+            ],
+            "output": "swap",
+            "uniforms": {
+                "BarrierConfig": [
+                    { "name": "InvViewProjC0",      "type": "vec4",  "value": [1.0, 0.0, 0.0, 0.0] },
+                    { "name": "InvViewProjC1",      "type": "vec4",  "value": [0.0, 1.0, 0.0, 0.0] },
+                    { "name": "InvViewProjC2",      "type": "vec4",  "value": [0.0, 0.0, 1.0, 0.0] },
+                    { "name": "InvViewProjC3",      "type": "vec4",  "value": [0.0, 0.0, 0.0, 1.0] },
+                    { "name": "BarrierCenterRadius","type": "vec4",  "value": [0.0, 0.0, 0.0, 5.0] },
+                    { "name": "BarrierControl",     "type": "vec4",  "value": [0.0, 0.0, 0.0, 0.0] },
+                    { "name": "Ripple0",            "type": "vec4",  "value": [0.0, 0.0, 0.0, 1.0] },
+                    { "name": "Ripple1",            "type": "vec4",  "value": [0.0, 0.0, 0.0, 1.0] },
+                    { "name": "Ripple2",            "type": "vec4",  "value": [0.0, 0.0, 0.0, 1.0] },
+                    { "name": "Ripple3",            "type": "vec4",  "value": [0.0, 0.0, 0.0, 1.0] },
+                    { "name": "Ripple4",            "type": "vec4",  "value": [0.0, 0.0, 0.0, 1.0] },
+                    { "name": "Ripple5",            "type": "vec4",  "value": [0.0, 0.0, 0.0, 1.0] },
+                    { "name": "Ripple6",            "type": "vec4",  "value": [0.0, 0.0, 0.0, 1.0] },
+                    { "name": "Ripple7",            "type": "vec4",  "value": [0.0, 0.0, 0.0, 1.0] },
+                    { "name": "RippleIntensityA",   "type": "vec4",  "value": [0.0, 0.0, 0.0, 0.0] },
+                    { "name": "RippleIntensityB",   "type": "vec4",  "value": [0.0, 0.0, 0.0, 0.0] }
+                ]
+            }
+        },
+        {
+            "vertex_shader": "minecraft:core/screenquad",
+            "fragment_shader": "minecraft:post/blit",
+            "inputs": [
+                {
+                    "sampler_name": "In",
+                    "target": "swap"
+                }
+            ],
+            "uniforms": {
+                "BlitConfig": [
+                    { "name": "ColorModulate", "type": "vec4", "value": [1.0, 1.0, 1.0, 1.0] }
+                ]
+            },
+            "output": "minecraft:main"
+        }
+    ]
+}

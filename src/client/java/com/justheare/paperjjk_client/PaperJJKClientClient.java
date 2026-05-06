@@ -127,6 +127,7 @@ public class PaperJJKClientClient implements ClientModInitializer {
 		// 클라이언트 틱 이벤트: 도메인 반지름 업데이트 + 파티클 테스트
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			ClientGameData.updateAllDomains();
+			com.justheare.paperjjk_client.shader.PassiveBarrierManager.tick(client);
 
 			// /jjkdebug particle 활성화 시 플레이어 주변에 파티클 스폰
 			if (DebugCommand.particleTestActive && client.world != null && client.player != null) {
