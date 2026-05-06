@@ -360,8 +360,8 @@ public class DebugCommand {
             context.getSource().sendFeedback(Text.literal("§c[Error] No player found"));
             return 0;
         }
-        if (com.justheare.paperjjk_client.shader.PassiveBarrierManager.isActive()) {
-            com.justheare.paperjjk_client.shader.PassiveBarrierManager.deactivate();
+        if (com.justheare.paperjjk_client.shader.PassiveBarrierManager.isDebugActive()) {
+            com.justheare.paperjjk_client.shader.PassiveBarrierManager.debugDeactivate();
             context.getSource().sendFeedback(
                 Text.literal("§d[PaperJJK] §f배리어 §cDEACTIVATED")
             );
@@ -369,7 +369,7 @@ public class DebugCommand {
             Vec3d pos = new Vec3d(client.player.getX(),
                 client.player.getY() + client.player.getHeight() / 2.0,
                 client.player.getZ());
-            com.justheare.paperjjk_client.shader.PassiveBarrierManager.activate(pos, radius, power);
+            com.justheare.paperjjk_client.shader.PassiveBarrierManager.debugActivate(pos, radius, power);
             context.getSource().sendFeedback(
                 Text.literal("§d[PaperJJK] §f배리어 §aACTIVATED §f| power §e" +
                     String.format("%.2f", power) +
@@ -382,26 +382,27 @@ public class DebugCommand {
 
     private static int triggerBarrierHit(CommandContext<FabricClientCommandSource> context) {
         net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
-        if (!com.justheare.paperjjk_client.shader.PassiveBarrierManager.isActive()) {
-            context.getSource().sendFeedback(
-                Text.literal("§c[PaperJJK] 배리어가 비활성 상태입니다. 먼저 /jjkdebug barrier 실행")
-            );
-            return 0;
-        }
         if (client.player == null) {
             context.getSource().sendFeedback(Text.literal("§c[Error] No player found"));
             return 0;
         }
-        // 플레이어 → 배리어 중심 방향으로 표면 충돌 지점 계산
-        Vec3d center    = com.justheare.paperjjk_client.shader.PassiveBarrierManager.center;
-        float radius    = com.justheare.paperjjk_client.shader.PassiveBarrierManager.radius;
+        com.justheare.paperjjk_client.shader.PassiveBarrierManager.BarrierState debugState =
+            com.justheare.paperjjk_client.shader.PassiveBarrierManager.getActiveStates()
+                .stream().filter(s -> s.isDebug).findFirst().orElse(null);
+        if (debugState == null) {
+            context.getSource().sendFeedback(
+                Text.literal("§c[PaperJJK] 배리어가 비활성 상태입니다. 먼저 /jjkdebug barrier 실행"));
+            return 0;
+        }
+        Vec3d center = debugState.cachedCenter;
+        float radius = debugState.radius;
         Vec3d playerPos = new Vec3d(client.player.getX(),
             client.player.getY() + client.player.getHeight() / 2.0,
             client.player.getZ());
         Vec3d dir       = center.subtract(playerPos);
         Vec3d hitDir    = dir.lengthSquared() > 0.0001 ? dir.normalize() : new Vec3d(0, 0, 1);
         Vec3d hitPos    = center.add(hitDir.negate().multiply(radius));
-        com.justheare.paperjjk_client.shader.PassiveBarrierManager.addRipple(hitPos, 1.0f);
+        com.justheare.paperjjk_client.shader.PassiveBarrierManager.debugAddRipple(hitPos, 1.0f);
         context.getSource().sendFeedback(
             Text.literal("§d[PaperJJK] §f배리어 충돌 파동 §a+1 §fat §e" +
                 String.format("(%.1f, %.1f, %.1f)", hitPos.x, hitPos.y, hitPos.z))

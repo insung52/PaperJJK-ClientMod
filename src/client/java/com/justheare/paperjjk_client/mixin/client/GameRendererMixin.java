@@ -603,15 +603,11 @@ public class GameRendererMixin {
         if (com.justheare.paperjjk_client.shader.PassiveBarrierManager.isActive()) {
             Matrix4f barrierViewMat = new Matrix4f()
                 .rotation(camera.getRotation().conjugate(new org.joml.Quaternionf()));
-            Matrix4f barrierInvVP   = projectionMatrix
+            Matrix4f barrierInvVP = projectionMatrix
                 .mul(barrierViewMat, new Matrix4f())
                 .invert(new Matrix4f());
             Vec3d camPos = ((com.justheare.paperjjk_client.mixin.client.CameraAccessor) camera).getPos();
-
-            Vec3d bc    = com.justheare.paperjjk_client.shader.PassiveBarrierManager.center;
-            float relCx = (float)(bc.x - camPos.x);
-            float relCy = (float)(bc.y - camPos.y);
-            float relCz = (float)(bc.z - camPos.z);
+            float barrierTime = (float)(System.currentTimeMillis() % 100000L) / 1000.0f;
 
             PostEffectProcessor barrierProcessor;
             try {
@@ -624,13 +620,29 @@ public class GameRendererMixin {
                 barrierProcessor = null;
             }
             if (barrierProcessor != null) {
-                float barrierTime = (float)(System.currentTimeMillis() % 100000L) / 1000.0f;
-                updateBarrierUniforms(barrierProcessor, barrierInvVP,
-                    relCx, relCy, relCz,
-                    com.justheare.paperjjk_client.shader.PassiveBarrierManager.radius,
-                    com.justheare.paperjjk_client.shader.PassiveBarrierManager.power,
-                    barrierTime, camPos);
-                barrierProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
+                float deltaTicks = renderTickCounter.getDynamicDeltaTicks();
+                for (com.justheare.paperjjk_client.shader.PassiveBarrierManager.BarrierState bs
+                        : com.justheare.paperjjk_client.shader.PassiveBarrierManager.getActiveStates()) {
+
+                    // 매 프레임 엔티티 보간 위치로 갱신 → 끊김 없이 부드럽게 추적
+                    if (!bs.isDebug && client.world != null) {
+                        net.minecraft.entity.player.PlayerEntity ce =
+                            client.world.getPlayerByUuid(bs.casterUuid);
+                        if (ce != null) {
+                            // getLerpedPos: 서버 틱 사이를 deltaTicks로 보간한 렌더 위치
+                            Vec3d lp = ce.getLerpedPos(deltaTicks);
+                            bs.cachedCenter = lp.add(0, ce.getHeight() / 2.0, 0);
+                        }
+                    }
+
+                    Vec3d bc = bs.cachedCenter;
+                    updateBarrierUniforms(barrierProcessor, barrierInvVP,
+                        (float)(bc.x - camPos.x),
+                        (float)(bc.y - camPos.y),
+                        (float)(bc.z - camPos.z),
+                        bs.radius, bs.power, barrierTime, camPos, bs);
+                    barrierProcessor.render(mainFb, ObjectAllocator.TRIVIAL);
+                }
             }
         }
     }
@@ -994,7 +1006,8 @@ public class GameRendererMixin {
                                        Matrix4f invViewProj,
                                        float relCx, float relCy, float relCz,
                                        float radius, float power, float time,
-                                       Vec3d camPos) {
+                                       Vec3d camPos,
+                                       com.justheare.paperjjk_client.shader.PassiveBarrierManager.BarrierState bs) {
         try {
             java.util.Map<String, com.mojang.blaze3d.buffers.GpuBuffer> ubs =
                 getUniformBuffers(processor);
@@ -1025,20 +1038,19 @@ public class GameRendererMixin {
                 // BarrierControl
                 b.putVec4(power, time, 0f, 0f);
                 // Ripple0..7 (cam-relative)
-                Vec3d[] rp = com.justheare.paperjjk_client.shader.PassiveBarrierManager.ripplePos;
-                float[] ra = com.justheare.paperjjk_client.shader.PassiveBarrierManager.rippleAge;
                 for (int i = 0; i < 8; i++) {
                     b.putVec4(
-                        (float)(rp[i].x - camPos.x),
-                        (float)(rp[i].y - camPos.y),
-                        (float)(rp[i].z - camPos.z),
-                        ra[i]
+                        (float)(bs.ripplePos[i].x - camPos.x),
+                        (float)(bs.ripplePos[i].y - camPos.y),
+                        (float)(bs.ripplePos[i].z - camPos.z),
+                        bs.rippleAge[i]
                     );
                 }
                 // RippleIntensityA/B
-                float[] ri = com.justheare.paperjjk_client.shader.PassiveBarrierManager.rippleIntensity;
-                b.putVec4(ri[0], ri[1], ri[2], ri[3]);
-                b.putVec4(ri[4], ri[5], ri[6], ri[7]);
+                b.putVec4(bs.rippleIntensity[0], bs.rippleIntensity[1],
+                          bs.rippleIntensity[2], bs.rippleIntensity[3]);
+                b.putVec4(bs.rippleIntensity[4], bs.rippleIntensity[5],
+                          bs.rippleIntensity[6], bs.rippleIntensity[7]);
                 RenderSystem.getDevice().createCommandEncoder()
                     .writeToBuffer(buf.slice(), b.get());
             } finally {

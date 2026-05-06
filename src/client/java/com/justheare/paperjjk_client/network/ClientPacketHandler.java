@@ -66,8 +66,12 @@ public class ClientPacketHandler {
                         case PacketIds.BODY_REIN_UPDATE  -> handleBodyReinUpdate(context.client(), buf);
                         case PacketIds.KAI_SLASH            -> handleKaiSlash(context.client(), buf);
                         case PacketIds.HACHI_SLASH          -> handleHachiSlash(context.client(), buf);
-                        case PacketIds.MIZUSHI_FUGA_CHARGE  -> handleMizushiFugaCharge(context.client(), buf);
-                        case PacketIds.MIZUSHI_THERMOBARIC  -> handleMizushiThermobaric(context.client(), buf);
+                        case PacketIds.MIZUSHI_FUGA_CHARGE       -> handleMizushiFugaCharge(context.client(), buf);
+                        case PacketIds.MIZUSHI_THERMOBARIC       -> handleMizushiThermobaric(context.client(), buf);
+                        case PacketIds.INFINITY_PASSIVE_ACTIVATE   -> handleInfinityPassiveActivate(context.client(), buf);
+                        case PacketIds.INFINITY_PASSIVE_SYNC       -> handleInfinityPassiveSync(context.client(), buf);
+                        case PacketIds.INFINITY_PASSIVE_COLLISION  -> handleInfinityPassiveCollision(context.client(), buf);
+                        case PacketIds.INFINITY_PASSIVE_DEACTIVATE -> handleInfinityPassiveDeactivate(context.client(), buf);
                         default -> LOGGER.warn("Unknown packet ID: 0x{}", String.format("%02X", packetId));
                     }
                 } catch (Exception e) {
@@ -966,6 +970,53 @@ public class ClientPacketHandler {
             com.justheare.paperjjk_client.shader.MizushiThermobaricManager.trigger(blastCenter, radius);
 
             LOGGER.info("[Mizushi Thermobaric] triggered at ({},{},{}) radius={}", cx, cy, cz, radius);
+        });
+    }
+
+    // ── INFINITY_PASSIVE (0x36-0x39) ─────────────────────────────────────
+
+    private static void handleInfinityPassiveActivate(MinecraftClient client, PacketByteBuf buf) {
+        long uuidMSB = buf.readLong();
+        long uuidLSB = buf.readLong();
+        float radius = buf.readFloat();
+        float power  = buf.readFloat();
+        java.util.UUID uuid = new java.util.UUID(uuidMSB, uuidLSB);
+        client.execute(() -> {
+            com.justheare.paperjjk_client.shader.PassiveBarrierManager.onActivate(uuid, radius, power);
+            LOGGER.debug("[InfinityPassive] ACTIVATE uuid={} radius={} power={}", uuid, radius, power);
+        });
+    }
+
+    private static void handleInfinityPassiveSync(MinecraftClient client, PacketByteBuf buf) {
+        long uuidMSB = buf.readLong();
+        long uuidLSB = buf.readLong();
+        float radius = buf.readFloat();
+        float power  = buf.readFloat();
+        java.util.UUID uuid = new java.util.UUID(uuidMSB, uuidLSB);
+        client.execute(() ->
+            com.justheare.paperjjk_client.shader.PassiveBarrierManager.onSync(uuid, radius, power));
+    }
+
+    private static void handleInfinityPassiveCollision(MinecraftClient client, PacketByteBuf buf) {
+        long uuidMSB  = buf.readLong();
+        long uuidLSB  = buf.readLong();
+        double hx     = buf.readDouble();
+        double hy     = buf.readDouble();
+        double hz     = buf.readDouble();
+        float intensity = buf.readFloat();
+        java.util.UUID uuid = new java.util.UUID(uuidMSB, uuidLSB);
+        client.execute(() ->
+            com.justheare.paperjjk_client.shader.PassiveBarrierManager.onCollision(
+                uuid, new net.minecraft.util.math.Vec3d(hx, hy, hz), intensity));
+    }
+
+    private static void handleInfinityPassiveDeactivate(MinecraftClient client, PacketByteBuf buf) {
+        long uuidMSB = buf.readLong();
+        long uuidLSB = buf.readLong();
+        java.util.UUID uuid = new java.util.UUID(uuidMSB, uuidLSB);
+        client.execute(() -> {
+            com.justheare.paperjjk_client.shader.PassiveBarrierManager.onDeactivate(uuid);
+            LOGGER.debug("[InfinityPassive] DEACTIVATE uuid={}", uuid);
         });
     }
 
